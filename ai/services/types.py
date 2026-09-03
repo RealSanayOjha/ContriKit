@@ -6,18 +6,40 @@ from dataclasses import dataclass, field
 from typing import Any, Optional
 
 # Roles accepted by chat completion APIs.
-VALID_ROLES = ("system", "user", "assistant")
+VALID_ROLES = ("system", "user", "assistant", "tool")
 
 OPENAI_COMPATIBLE_DEFAULT_BASE_URL = "https://api.openai.com/v1"
 OPENAI_COMPATIBLE_DEFAULT_MODEL = "gpt-4o-mini"
 
 
 @dataclass(frozen=True)
+class ToolSpec:
+    """Provider-facing function definition (JSON schema for a controlled tool)."""
+
+    name: str
+    description: str
+    parameters: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class ToolCall:
+    """A tool invocation requested by the LLM."""
+
+    id: str
+    name: str
+    arguments: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
 class ChatMessage:
-    """One message inside a conversation. `role` is system/user/assistant."""
+    """One message inside a conversation. Role is system/user/assistant/tool."""
 
     role: str
-    content: str
+    content: str = ""
+    # Populated when the assistant requests tool execution.
+    tool_calls: tuple[ToolCall, ...] = ()
+    # Populated for role="tool" messages that answer a tool call.
+    tool_call_id: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -49,6 +71,8 @@ class ChatRequest:
     temperature: Optional[float] = None
     max_tokens: Optional[int] = None
     timeout: Optional[int] = None
+    # Provider-facing tool definitions (empty => no tool calling).
+    tools: tuple[ToolSpec, ...] = ()
     # Reserved for later: provider hints, metadata, request ids for usage tracking.
     metadata: dict[str, Any] = field(default_factory=dict)
 
@@ -62,6 +86,9 @@ class ChatResponse:
     model: str
     usage: Optional[UsageStats] = None
     raw: Optional[dict] = None
+    # Populated when the provider asks the caller to run tools.
+    tool_calls: tuple[ToolCall, ...] = ()
+    finish_reason: str = "stop"
 
 
 @dataclass

@@ -26,12 +26,17 @@ from ai.services import (
     LLMRouter,
     LLMTimeoutError,
     ProviderConfig,
+    ToolCall,
+    ToolContext,
+    ToolRegistry,
+    ToolSpec,
     UsageStats,
 )
 from ai.services import service as service_module
 from ai.services.providers import PROVIDER_REGISTRY, get_provider_class
 from ai.services.providers.base import LLMProvider
 from ai.services.providers.openai_compatible import OpenAICompatibleProvider
+from ai.services.tools import AITool
 from ai.views import ai_health_view
 
 
@@ -219,6 +224,90 @@ class OpenAICompatibleProviderTests(SimpleTestCase):
         with self.assertRaises(LLMInvalidResponseError):
             self.provider.chat(self.request)
 
+    @mock.patch("ai.services.providers.openai_compatible.requests.post")
+    def test_sends_tools_schema_in_payload(self, mock_post):
+        tool = ToolSpec(
+            name="search_issues",
+            description="Search issues.",
+            parameters={"type": "object", "properties": {"q": {"type": "string"}}},
+        )
+        mock_post.return_value = fake_openai_response(
+            {"model": "test-model", "choices": [{"message": {"content": "ok"}}]}
+        )
+        self.provider.chat(
+            ChatRequest(
+                messages=(ChatMessage(role="user", content="find"),),
+                tools=(tool,),
+            )
+        )
+        payload = mock_post.call_args.kwargs["json"]
+        self.assertEqual(payload["tools"][0]["type"], "function")
+        self.assertEqual(payload["tools"][0]["function"]["name"], "search_issues")
+
+    @mock.patch("ai.services.providers.openai_compatible.requests.post")
+    def test_parses_tool_calls_from_response(self, mock_post):
+        mock_post.return_value = fake_openai_response(
+            {
+                "model": "test-model",
+                "choices": [
+                    {
+                        "message": {
+                            "content": None,
+                            "tool_calls": [
+                                {
+                                    "id": "call_1",
+                                    "type": "function",
+                                    "function": {
+                                        "name": "search_issues",
+                                        "arguments": '{"q": "python"}',
+                                    },
+                                }
+                            ],
+                        },
+                        "finish_reason": "tool_calls",
+                    }
+                ],
+            }
+        )
+        response = self.provider.chat(self.request)
+        self.assertEqual(len(response.tool_calls), 1)
+        self.assertEqual(response.tool_calls[0].name, "search_issues")
+        self.assertEqual(response.tool_calls[0].arguments, {"q": "python"})
+        self.assertEqual(response.finish_reason, "tool_calls")
+        self.assertEqual(response.content, "")
+
+    @mock.patch("ai.services.providers.openai_compatible.requests.post")
+    def test_malformed_tool_arguments_preserved(self, mock_post):
+        mock_post.return_value = fake_openai_response(
+            {
+                "model": "test-model",
+                "choices": [
+                    {
+                        "message": {
+                            "content": None,
+                            "tool_calls": [
+                                {
+                                    "id": "call_2",
+                                    "type": "function",
+                                    "function": {"name": "search_issues", "arguments": "{not json"},
+                                }
+                            ],
+                        }
+                    }
+                ],
+            }
+        )
+        response = self.provider.chat(self.request)
+        self.assertIn("_malformed", response.tool_calls[0].arguments)
+
+    @mock.patch("ai.services.providers.openai_compatible.requests.post")
+    def test_empty_response_without_tool_calls_raises(self, mock_post):
+        mock_post.return_value = fake_openai_response(
+            {"model": "test-model", "choices": [{"message": {"content": None}}]}
+        )
+        with self.assertRaises(LLMInvalidResponseError):
+            self.provider.chat(self.request)
+
     def test_unconfigured_provider_raises(self):
         unconfigured = OpenAICompatibleProvider(ProviderConfig(name="openai", api_key=""))
         self.assertFalse(unconfigured.is_configured())
@@ -253,6 +342,130 @@ class AIServiceTests(SimpleTestCase):
         service = AIService(LLMRouter([FakeProvider(configured=False)]))
         self.assertFalse(service.is_configured())
         self.assertEqual(service.health()["status"], "not_configured")
+
+
+class EchoTool(AITool):
+    """In-memory tool used to test the registry/loop without a database."""
+
+    name = "echo"
+    description = "Echo args."
+    parameters = {
+        "type": "object",
+        "properties": {"value": {"type": "string"}},
+    }
+
+    def run(self, context: ToolContext, value=""):
+        return {"echo": value, "user": getattr(context.user, "username", None)}
+
+
+class ScriptedProvider(LLMProvider):
+    """Returns canned responses in order; records every request."""
+
+    name = "scripted"
+
+    def __init__(self, responses):
+        super().__init__(ProviderConfig(name=self.name, model="fake-model"))
+        self.responses = list(responses)
+        self.requests: list[ChatRequest] = []
+
+    def is_configured(self):
+        return True
+
+    def chat(self, request):
+        self.requests.append(request)
+        return self.responses.pop(0)
+
+
+def make_registry():
+    registry = ToolRegistry()
+    registry.register(EchoTool())
+    return registry
+
+
+class ToolRegistryTests(SimpleTestCase):
+    def test_executes_declared_params_only(self):
+        result = make_registry().execute(
+            "echo",
+            {"value": "hello", "user_id": 999, "__proto__": "x"},
+            ToolContext(),
+        )
+        self.assertEqual(result, {"echo": "hello", "user": None})
+
+    def test_unknown_tool_returns_error(self):
+        result = make_registry().execute("delete_all", {}, ToolContext())
+        self.assertEqual(result["error"], "Unknown tool: 'delete_all'.")
+
+    def test_missing_tool_argument_is_safe(self):
+        result = make_registry().execute("echo", {}, ToolContext())
+        self.assertEqual(result, {"echo": "", "user": None})
+
+    def test_tool_exception_is_contained(self):
+        class BrokenTool(AITool):
+            name = "broken"
+            description = "raises"
+            parameters = {"type": "object", "properties": {}}
+
+            def run(self, context, **kwargs):
+                raise RuntimeError("boom")
+
+        registry = ToolRegistry()
+        registry.register(BrokenTool())
+        result = registry.execute("broken", {}, ToolContext())
+        self.assertIn("error", result)
+
+    def test_specs_are_tool_spec_objects(self):
+        specs = make_registry().specs()
+        self.assertEqual(specs[0].name, "echo")
+        self.assertIn("properties", specs[0].parameters)
+
+
+class ToolLoopTests(SimpleTestCase):
+    def test_tool_call_is_executed_and_result_fed_back(self):
+        tool_call = ToolCall(id="call_1", name="echo", arguments={"value": "issue 42"})
+        provider = ScriptedProvider(
+            [
+                ChatResponse(content="", provider="scripted", model="m", tool_calls=(tool_call,)),
+                ChatResponse(content="Final answer.", provider="scripted", model="m"),
+            ]
+        )
+        service = AIService(LLMRouter([provider]), tools=make_registry())
+        response = service.chat([ChatMessage(role="user", content="tell me about x")])
+
+        self.assertEqual(response.content, "Final answer.")
+        self.assertEqual(len(provider.requests), 2)
+        second_request = provider.requests[1]
+        # assistant tool_call followed by the tool result message
+        self.assertEqual(second_request.messages[1].role, "assistant")
+        self.assertTrue(second_request.messages[1].tool_calls)
+        self.assertEqual(second_request.messages[2].role, "tool")
+        self.assertEqual(second_request.messages[2].tool_call_id, "call_1")
+        self.assertIn("issue 42", second_request.messages[2].content)
+
+    def test_loop_stops_after_max_rounds(self):
+        def tool_call_round():
+            return ChatResponse(
+                content="",
+                provider="scripted",
+                model="m",
+                tool_calls=(ToolCall(id="c", name="echo", arguments={"value": "x"}),),
+            )
+
+        provider = ScriptedProvider([tool_call_round() for _ in range(5)])
+        service = AIService(LLMRouter([provider]), tools=make_registry())
+        response = service.chat(
+            [ChatMessage(role="user", content="loop")], max_tool_rounds=2
+        )
+
+        # 2 tool rounds + 1 forced final call (no tools)
+        self.assertEqual(len(provider.requests), 3)
+        self.assertEqual(provider.requests[-1].tools, ())
+        self.assertEqual(response.content, "")
+
+    def test_no_tools_single_call(self):
+        provider = FakeProvider(configured=True)
+        service = AIService(LLMRouter([provider]))
+        response = service.chat([ChatMessage(role="user", content="hi")])
+        self.assertEqual(response.content, "fake reply")
 
 
 class SettingsWiringTests(SimpleTestCase):

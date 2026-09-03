@@ -152,6 +152,11 @@ SOCIAL_AUTH_GOOGLE_OAUTH2_SCOPE = [
     'https://www.googleapis.com/auth/userinfo.profile',
 ]
 
+# Optional GitHub Personal Access Token (PAT) for higher rate limits
+# (5000/hr instead of 60/hr). Used server-side by repos.github_api and the
+# AI GitHub tools; never exposed to templates or JavaScript.
+GITHUB_PAT = config('GITHUB_PAT', default='')
+
 # Where social auth should land / start / go on failure.
 SOCIAL_AUTH_LOGIN_URL = '/accounts/login/'
 SOCIAL_AUTH_LOGIN_REDIRECT_URL = '/dashboard/'
