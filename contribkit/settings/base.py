@@ -200,5 +200,12 @@ AI_OPENAI_MODEL = config('AI_OPENAI_MODEL', default='gpt-4o-mini')
 AI_OPENAI_TIMEOUT = config('AI_OPENAI_TIMEOUT', default=60, cast=int)
 AI_OPENAI_MAX_TOKENS = config('AI_OPENAI_MAX_TOKENS', default=1024, cast=int)
 AI_OPENAI_TEMPERATURE = config('AI_OPENAI_TEMPERATURE', default=0.7, cast=float)
+
+# AI chat endpoint (works with the existing Django session — no DB changes)
+AI_CHAT_RATE_LIMIT = config('AI_CHAT_RATE_LIMIT', default=10, cast=int)
+AI_CHAT_RATE_WINDOW = config('AI_CHAT_RATE_WINDOW', default=60, cast=int)
+AI_CHAT_MAX_MESSAGE_LENGTH = config('AI_CHAT_MAX_MESSAGE_LENGTH', default=2000, cast=int)
+AI_CHAT_HISTORY_LIMIT = config('AI_CHAT_HISTORY_LIMIT', default=12, cast=int)
+
 # Reserved for the upcoming multi-provider router (priority/fallback/queue):
 # AI_PROVIDER_PRIORITY = config('AI_PROVIDER_PRIORITY', default='openai', cast=Csv())

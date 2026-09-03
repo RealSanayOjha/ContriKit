@@ -63,11 +63,15 @@ class AIService:
         page_path=None,
         issue_id=None,
         max_tool_rounds: int = MAX_TOOL_ROUNDS,
+        tool_events: list | None = None,
     ) -> ChatResponse:
         """Send messages through the LLM router, executing tools when asked.
 
         ``tools`` (a ToolRegistry) enables the tool loop; ``user``/``page_path``/
         ``issue_id`` build the server-controlled ToolContext tools receive.
+        ``tool_events`` (an optional list) receives ``{"name", "arguments",
+        "result"}`` for every executed tool so callers can build UI source
+        links without re-running tools or re-querying the database.
         """
         self._validate_messages(messages)
         registry = tools if tools is not None else self.tools
@@ -95,6 +99,14 @@ class AIService:
             )
             for call in response.tool_calls:
                 result = registry.execute(call.name, call.arguments, context)
+                if tool_events is not None:
+                    tool_events.append(
+                        {
+                            "name": call.name,
+                            "arguments": call.arguments,
+                            "result": result,
+                        }
+                    )
                 working.append(
                     ChatMessage(
                         role="tool",
