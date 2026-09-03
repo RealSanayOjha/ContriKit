@@ -20,6 +20,7 @@ from ..exceptions import (
     LLMConfigurationError,
     LLMInvalidResponseError,
     LLMProviderError,
+    LLMProviderServerError,
     LLMProviderUnavailableError,
     LLMRateLimitError,
     LLMTimeoutError,
@@ -136,7 +137,7 @@ class OpenAICompatibleProvider(LLMProvider):
                 provider=provider,
             )
         if status >= 500:
-            raise LLMProviderError(
+            raise LLMProviderServerError(
                 f"Provider '{provider}' server error (HTTP {status}).",
                 status_code=status,
                 provider=provider,

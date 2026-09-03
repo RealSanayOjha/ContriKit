@@ -24,9 +24,9 @@ import logging
 
 from django.conf import settings
 
-from .exceptions import AIServiceError
+from .exceptions import AIServiceError, LLMConfigurationError
 from .prompts import build_system_prompt
-from .providers import get_provider_class
+from .providers import get_provider_class, get_provider_defaults
 from .providers.base import LLMProvider
 from .router import LLMRouter
 from .tools import ToolContext, ToolRegistry, build_default_tool_registry
@@ -37,10 +37,26 @@ logger = logging.getLogger(__name__)
 # Module-level cache: the router is built once per process from settings.
 _ai_service: "AIService | None" = None
 
-OPENAI_COMPATIBLE_DEFAULT_BASE_URL = "https://api.openai.com/v1"
-OPENAI_COMPATIBLE_DEFAULT_MODEL = "gpt-4o-mini"
-
 MAX_TOOL_ROUNDS = 4
+
+# Settings key used for each provider's API key; aliases share a key source.
+PROVIDER_KEY_SETTINGS = {
+    "openai": "AI_OPENAI_API_KEY",
+    "openai_compatible": "AI_OPENAI_API_KEY",
+    "grok": "AI_GROK_API_KEY",
+    "xai": "AI_GROK_API_KEY",
+    "gemini": "AI_GEMINI_API_KEY",
+    "anthropic": "AI_ANTHROPIC_API_KEY",
+}
+
+PROVIDER_DEFAULT_PRIORITY = {
+    "openai": 10,
+    "openai_compatible": 10,
+    "grok": 20,
+    "xai": 20,
+    "gemini": 30,
+    "anthropic": 40,
+}
 
 
 class AIService:
@@ -130,25 +146,31 @@ class AIService:
         """Diagnostics for monitoring/health checks (no secrets, no API call)."""
         providers = self.router.health()
         configured = [p["provider"] for p in providers if p.get("configured")]
+        active = None
+        for provider in self.router.providers:
+            if provider.is_configured() and provider.config.rate_limit_per_minute is None:
+                active = provider.name
+                break
         tools_enabled = self.tools is not None
         return {
             "status": "ok" if configured else "not_configured",
             "service": "contribkit-ai",
-            "active_provider": configured[0] if configured else None,
+            "active_provider": active if active else (configured[0] if configured else None),
             "providers": providers,
             "tools": {
                 "enabled": tools_enabled,
                 "count": len(self.tools.names()) if tools_enabled else 0,
                 "names": self.tools.names() if tools_enabled else [],
             },
-            # Flags describing which extension points are active (all reserved
-            # for later steps — this iteration is single-provider only).
+            # Feature flags: what the router currently supports.
             "extensions": {
-                "multi_provider_priority": False,
-                "fallback": False,
-                "retry_backoff": False,
-                "rate_limit_tracking": False,
-                "circuit_breaker": False,
+                "multi_provider_priority": len(self.router.providers) > 1,
+                "fallback": self.router.fallback,
+                "retry_backoff": self.router.retries > 0,
+                "rate_limit_tracking": any(
+                    p.config.rate_limit_per_minute for p in self.router.providers
+                ),
+                "circuit_breaker": self.router.circuit_breaker,
                 "priority_queue": False,
                 "usage_tracking": True,
             },
@@ -178,21 +200,63 @@ class AIService:
                 raise ValueError(f"Unsupported message role: {message.role!r}.")
 
 
-def build_default_router() -> LLMRouter:
-    """Build the router from Django settings (single provider for now)."""
-    provider_name = getattr(settings, "AI_PROVIDER", "openai").strip().lower()
-    provider_cls = get_provider_class(provider_name)
+def _provider_names() -> list[str]:
+    """Priority-ordered provider list from settings (AI_PROVIDERS).
 
-    config = ProviderConfig(
-        name=provider_name,
-        api_key=getattr(settings, "AI_OPENAI_API_KEY", ""),
-        base_url=getattr(settings, "AI_OPENAI_BASE_URL", OPENAI_COMPATIBLE_DEFAULT_BASE_URL),
-        model=getattr(settings, "AI_OPENAI_MODEL", OPENAI_COMPATIBLE_DEFAULT_MODEL),
-        timeout=getattr(settings, "AI_OPENAI_TIMEOUT", 60),
-        max_tokens=getattr(settings, "AI_OPENAI_MAX_TOKENS", 1024),
-        temperature=getattr(settings, "AI_OPENAI_TEMPERATURE", 0.7),
+    Backward compatible: if AI_PROVIDERS is not set, fall back to the
+    single AI_PROVIDER setting used by earlier versions.
+    """
+    raw = getattr(settings, "AI_PROVIDERS", "") or getattr(settings, "AI_PROVIDER", "openai")
+    names = [name.strip().lower() for name in str(raw).split(",") if name.strip()]
+    return names or ["openai"]
+
+
+def _provider_setting(name: str, suffix: str, default):
+    """Read AI_<NAME>_<SUFFIX> from settings, e.g. AI_GROK_API_KEY."""
+    key = f"AI_{name.replace('-', '_').upper()}_{suffix}"
+    value = getattr(settings, key, None)
+    return default if value in (None, "") else value
+
+
+def _provider_config(name: str) -> ProviderConfig:
+    """Build a ProviderConfig for one provider from settings/env."""
+    defaults = get_provider_defaults(name)
+    key_setting = PROVIDER_KEY_SETTINGS.get(name, "")
+    api_key = getattr(settings, key_setting, "") if key_setting else ""
+    rate_limit = _provider_setting(name, "RATE_LIMIT", 0)
+    return ProviderConfig(
+        name=name,
+        api_key=api_key,
+        base_url=_provider_setting(name, "BASE_URL", defaults.get("base_url")),
+        model=_provider_setting(name, "MODEL", defaults.get("model")),
+        timeout=_provider_setting(name, "TIMEOUT", 60),
+        max_tokens=_provider_setting(name, "MAX_TOKENS", 1024),
+        temperature=_provider_setting(name, "TEMPERATURE", 0.7),
+        priority=_provider_setting(name, "PRIORITY", PROVIDER_DEFAULT_PRIORITY.get(name, 100)),
+        rate_limit_per_minute=int(rate_limit) if rate_limit else None,
     )
-    return LLMRouter([provider_cls(config)])
+
+
+def build_default_router() -> LLMRouter:
+    """Build the router from Django settings with priority/fallback/retries."""
+    providers = []
+    for name in _provider_names():
+        try:
+            provider_cls = get_provider_class(name)
+        except LLMConfigurationError as exc:
+            logger.warning("Skipping unknown AI provider '%s': %s", name, exc)
+            continue
+        providers.append(provider_cls(_provider_config(name)))
+
+    return LLMRouter(
+        providers,
+        fallback=getattr(settings, "AI_PROVIDER_FALLBACK", True),
+        retries=getattr(settings, "AI_PROVIDER_RETRIES", 2),
+        retry_backoff=getattr(settings, "AI_PROVIDER_RETRY_BACKOFF", 0.5),
+        circuit_breaker=getattr(settings, "AI_PROVIDER_CIRCUIT_BREAKER", True),
+        circuit_failure_threshold=getattr(settings, "AI_PROVIDER_CIRCUIT_FAILURE_THRESHOLD", 3),
+        circuit_reset_seconds=getattr(settings, "AI_PROVIDER_CIRCUIT_RESET_SECONDS", 60),
+    )
 
 
 def get_ai_service() -> AIService:

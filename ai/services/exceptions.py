@@ -23,6 +23,10 @@ class LLMProviderError(AIServiceError):
         self.provider = provider
 
 
+class LLMProviderServerError(LLMProviderError):
+    """Provider-side failure (HTTP 5xx) — safe to retry / fail over."""
+
+
 class LLMTimeoutError(LLMProviderError):
     """The provider did not respond within the configured timeout."""
 

@@ -193,19 +193,62 @@ SOCIAL_AUTH_PIPELINE = (
 # One OpenAI-compatible provider is wired now; multi-provider prioritization,
 # fallback, rate limiting, and queueing are added in later steps.
 # ---------------------------------------------------------------------------
+# Provider list, in priority order (first key with credentials wins, then
+# fallback). Accepts any of: openai, openai_compatible, grok, xai, gemini,
+# anthropic. Backward compatible: falls back to AI_PROVIDER when unset.
+AI_PROVIDERS = config('AI_PROVIDERS', default='')
 AI_PROVIDER = config('AI_PROVIDER', default='openai')
+
+# Multi-provider router behavior
+AI_PROVIDER_FALLBACK = config('AI_PROVIDER_FALLBACK', default=True, cast=bool)
+AI_PROVIDER_RETRIES = config('AI_PROVIDER_RETRIES', default=2, cast=int)
+AI_PROVIDER_RETRY_BACKOFF = config('AI_PROVIDER_RETRY_BACKOFF', default=0.5, cast=float)
+AI_PROVIDER_CIRCUIT_BREAKER = config('AI_PROVIDER_CIRCUIT_BREAKER', default=True, cast=bool)
+AI_PROVIDER_CIRCUIT_FAILURE_THRESHOLD = config('AI_PROVIDER_CIRCUIT_FAILURE_THRESHOLD', default=3, cast=int)
+AI_PROVIDER_CIRCUIT_RESET_SECONDS = config('AI_PROVIDER_CIRCUIT_RESET_SECONDS', default=60, cast=int)
+
+# ── OpenAI (native / OpenAI-compatible endpoints) ─────────────────────────
 AI_OPENAI_API_KEY = config('AI_OPENAI_API_KEY', default='')
 AI_OPENAI_BASE_URL = config('AI_OPENAI_BASE_URL', default='https://api.openai.com/v1')
 AI_OPENAI_MODEL = config('AI_OPENAI_MODEL', default='gpt-4o-mini')
 AI_OPENAI_TIMEOUT = config('AI_OPENAI_TIMEOUT', default=60, cast=int)
 AI_OPENAI_MAX_TOKENS = config('AI_OPENAI_MAX_TOKENS', default=1024, cast=int)
 AI_OPENAI_TEMPERATURE = config('AI_OPENAI_TEMPERATURE', default=0.7, cast=float)
+AI_OPENAI_PRIORITY = config('AI_OPENAI_PRIORITY', default=10, cast=int)
+AI_OPENAI_RATE_LIMIT = config('AI_OPENAI_RATE_LIMIT', default=0, cast=int)
+
+# ── xAI Grok (OpenAI-compatible API) ──────────────────────────────────────
+AI_GROK_API_KEY = config('AI_GROK_API_KEY', default='')
+AI_GROK_BASE_URL = config('AI_GROK_BASE_URL', default='https://api.x.ai/v1')
+AI_GROK_MODEL = config('AI_GROK_MODEL', default='grok-3-mini')
+AI_GROK_TIMEOUT = config('AI_GROK_TIMEOUT', default=60, cast=int)
+AI_GROK_MAX_TOKENS = config('AI_GROK_MAX_TOKENS', default=1024, cast=int)
+AI_GROK_TEMPERATURE = config('AI_GROK_TEMPERATURE', default=0.7, cast=float)
+AI_GROK_PRIORITY = config('AI_GROK_PRIORITY', default=20, cast=int)
+AI_GROK_RATE_LIMIT = config('AI_GROK_RATE_LIMIT', default=0, cast=int)
+
+# ── Google Gemini (OpenAI-compatible endpoint) ────────────────────────────
+AI_GEMINI_API_KEY = config('AI_GEMINI_API_KEY', default='')
+AI_GEMINI_BASE_URL = config('AI_GEMINI_BASE_URL', default='https://generativelanguage.googleapis.com/v1beta/openai')
+AI_GEMINI_MODEL = config('AI_GEMINI_MODEL', default='gemini-2.0-flash')
+AI_GEMINI_TIMEOUT = config('AI_GEMINI_TIMEOUT', default=60, cast=int)
+AI_GEMINI_MAX_TOKENS = config('AI_GEMINI_MAX_TOKENS', default=1024, cast=int)
+AI_GEMINI_TEMPERATURE = config('AI_GEMINI_TEMPERATURE', default=0.7, cast=float)
+AI_GEMINI_PRIORITY = config('AI_GEMINI_PRIORITY', default=30, cast=int)
+AI_GEMINI_RATE_LIMIT = config('AI_GEMINI_RATE_LIMIT', default=0, cast=int)
+
+# ── Anthropic Claude (native Messages API) ────────────────────────────────
+AI_ANTHROPIC_API_KEY = config('AI_ANTHROPIC_API_KEY', default='')
+AI_ANTHROPIC_BASE_URL = config('AI_ANTHROPIC_BASE_URL', default='https://api.anthropic.com/v1')
+AI_ANTHROPIC_MODEL = config('AI_ANTHROPIC_MODEL', default='claude-sonnet-4-5-20250929')
+AI_ANTHROPIC_TIMEOUT = config('AI_ANTHROPIC_TIMEOUT', default=60, cast=int)
+AI_ANTHROPIC_MAX_TOKENS = config('AI_ANTHROPIC_MAX_TOKENS', default=1024, cast=int)
+AI_ANTHROPIC_TEMPERATURE = config('AI_ANTHROPIC_TEMPERATURE', default=0.7, cast=float)
+AI_ANTHROPIC_PRIORITY = config('AI_ANTHROPIC_PRIORITY', default=40, cast=int)
+AI_ANTHROPIC_RATE_LIMIT = config('AI_ANTHROPIC_RATE_LIMIT', default=0, cast=int)
 
 # AI chat endpoint (works with the existing Django session — no DB changes)
 AI_CHAT_RATE_LIMIT = config('AI_CHAT_RATE_LIMIT', default=10, cast=int)
 AI_CHAT_RATE_WINDOW = config('AI_CHAT_RATE_WINDOW', default=60, cast=int)
 AI_CHAT_MAX_MESSAGE_LENGTH = config('AI_CHAT_MAX_MESSAGE_LENGTH', default=2000, cast=int)
 AI_CHAT_HISTORY_LIMIT = config('AI_CHAT_HISTORY_LIMIT', default=12, cast=int)
-
-# Reserved for the upcoming multi-provider router (priority/fallback/queue):
-# AI_PROVIDER_PRIORITY = config('AI_PROVIDER_PRIORITY', default='openai', cast=Csv())
