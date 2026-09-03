@@ -25,6 +25,7 @@ INSTALLED_APPS = [
     'templates_app',
     'cheatsheet',
     'core',
+    'ai',
 ]
 
 MIDDLEWARE = [
@@ -178,3 +179,21 @@ SOCIAL_AUTH_PIPELINE = (
     'social_core.pipeline.social_auth.load_extra_data',
     'social_core.pipeline.user.user_details',
 )
+
+# ---------------------------------------------------------------------------
+# AI Contribution Assistant (backend service layer)
+#
+# The `ai` app talks to LLM providers from the server only; API keys are read
+# from the environment (.env) and are never exposed to templates or JavaScript.
+# One OpenAI-compatible provider is wired now; multi-provider prioritization,
+# fallback, rate limiting, and queueing are added in later steps.
+# ---------------------------------------------------------------------------
+AI_PROVIDER = config('AI_PROVIDER', default='openai')
+AI_OPENAI_API_KEY = config('AI_OPENAI_API_KEY', default='')
+AI_OPENAI_BASE_URL = config('AI_OPENAI_BASE_URL', default='https://api.openai.com/v1')
+AI_OPENAI_MODEL = config('AI_OPENAI_MODEL', default='gpt-4o-mini')
+AI_OPENAI_TIMEOUT = config('AI_OPENAI_TIMEOUT', default=60, cast=int)
+AI_OPENAI_MAX_TOKENS = config('AI_OPENAI_MAX_TOKENS', default=1024, cast=int)
+AI_OPENAI_TEMPERATURE = config('AI_OPENAI_TEMPERATURE', default=0.7, cast=float)
+# Reserved for the upcoming multi-provider router (priority/fallback/queue):
+# AI_PROVIDER_PRIORITY = config('AI_PROVIDER_PRIORITY', default='openai', cast=Csv())
