@@ -3,7 +3,7 @@
 Talks to any endpoint implementing `POST {base_url}/chat/completions` with a
 Bearer token (OpenAI, Azure OpenAI-style gateways, OpenRouter, local
 Ollama/LM Studio, etc.). Named vendors with their own defaults — ``groq``
-(Groq, api.groq.com), ``grok``/``xai`` (xAI, api.x.ai), ``gemini`` — all share
+(Groq, api.groq.com), ``gemini`` — all share
 this class; only the base URL / key / model differ. Using plain `requests`
 keeps the provider dependency free: `requests` is already a project
 dependency (used for GitHub API), so no new package is required and the code
@@ -35,13 +35,11 @@ logger = logging.getLogger(__name__)
 
 # Maps a provider name to the .env setting holding its API key, so auth-error
 # messages point at the key the developer actually needs to fix. Without this,
-# a Groq (or Grok/Gemini) 401 misleadingly said "Check AI_OPENAI_API_KEY".
+# a Groq (or Gemini) 401 misleadingly said "Check AI_OPENAI_API_KEY".
 PROVIDER_KEY_HINTS = {
     "openai": "AI_OPENAI_API_KEY",
     "openai_compatible": "AI_OPENAI_API_KEY",
     "groq": "AI_GROQ_API_KEY",
-    "grok": "AI_GROK_API_KEY",
-    "xai": "AI_GROK_API_KEY",
     "gemini": "AI_GEMINI_API_KEY",
 }
 

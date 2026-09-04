@@ -198,12 +198,11 @@ class OpenAICompatibleProviderTests(SimpleTestCase):
 
     @mock.patch("ai.services.providers.openai_compatible.requests.post")
     def test_auth_error_names_correct_key_per_provider(self, mock_post):
-        # Regression: a Groq 401 must say AI_GROQ_API_KEY (not AI_OPENAI_API_KEY),
-        # otherwise a Groq/Grok key mix-up is undebuggable from the logs.
+        # A Groq 401 must say AI_GROQ_API_KEY (not AI_OPENAI_API_KEY),
+        # otherwise a bad key is undebuggable from the logs.
         from ai.services.providers.openai_compatible import _key_hint_for
 
         self.assertEqual(_key_hint_for("groq"), "AI_GROQ_API_KEY")
-        self.assertEqual(_key_hint_for("grok"), "AI_GROK_API_KEY")
         self.assertEqual(_key_hint_for("openai"), "AI_OPENAI_API_KEY")
         self.assertEqual(_key_hint_for("gemini"), "AI_GEMINI_API_KEY")
 
@@ -223,8 +222,8 @@ class OpenAICompatibleProviderTests(SimpleTestCase):
 
     @mock.patch("ai.services.providers.openai_compatible.requests.post")
     def test_groq_posts_to_groq_endpoint_with_bearer_key(self, mock_post):
-        # The Groq provider must call api.groq.com (never api.x.ai) with the
-        # Groq key as a Bearer token and a Llama model name.
+        # The Groq provider must call api.groq.com with the Groq key as a
+        # Bearer token and a Llama model name.
         groq_provider = OpenAICompatibleProvider(
             ProviderConfig(
                 name="groq",
@@ -242,7 +241,6 @@ class OpenAICompatibleProviderTests(SimpleTestCase):
         response = groq_provider.chat(self.request)
         called_url = mock_post.call_args.args[0]
         self.assertIn("api.groq.com", called_url)
-        self.assertNotIn("api.x.ai", called_url)
         headers = mock_post.call_args.kwargs["headers"]
         self.assertEqual(headers["Authorization"], "Bearer gsk-test")
         payload = mock_post.call_args.kwargs["json"]
@@ -583,9 +581,9 @@ class ProviderCredentialCheckTests(SimpleTestCase):
 
     def test_warns_when_no_provider_has_credentials(self):
         with override_settings(
-            AI_PROVIDERS="openai,grok",
+            AI_PROVIDERS="openai,groq",
             AI_OPENAI_API_KEY="",
-            AI_GROK_API_KEY="",
+            AI_GROQ_API_KEY="",
         ):
             warnings = ai_provider_credentials(None)
 
@@ -593,14 +591,14 @@ class ProviderCredentialCheckTests(SimpleTestCase):
         self.assertEqual(warnings[0].id, "ai.W001")
         # The hint has to name settings the developer can actually set.
         self.assertIn("AI_OPENAI_API_KEY", warnings[0].hint)
-        self.assertIn("AI_GROK_API_KEY", warnings[0].hint)
+        self.assertIn("AI_GROQ_API_KEY", warnings[0].hint)
         self.assertIn("manage.py ai_test", warnings[0].hint)
 
     def test_silent_when_a_provider_has_credentials(self):
         with override_settings(
-            AI_PROVIDERS="openai,grok",
+            AI_PROVIDERS="openai,groq",
             AI_OPENAI_API_KEY="sk-configured",
-            AI_GROK_API_KEY="",
+            AI_GROQ_API_KEY="",
         ):
             self.assertEqual(ai_provider_credentials(None), [])
 
