@@ -80,17 +80,16 @@ provider — API keys live in `.env` and never reach the browser.
 
 **With no API key the assistant cannot work, and it fails quietly:** `/ai/chat/`
 answers `503 {"code": "ai_unavailable"}` and the router short-circuits *before*
-making any outbound call, so nothing is ever sent to OpenAI/Groq/Gemini/Claude
+making any outbound call, so nothing is ever sent to OpenAI/Groq/Claude
 and the provider dashboard shows no request. `manage.py check` / `runserver`
 print the `ai.W001` warning at startup so this is visible immediately.
 
 ### 1. Put at least one key in `.env`
 
 ```dotenv
-AI_PROVIDERS=groq,openai,anthropic,gemini   # priority order; first provider with a key wins
+AI_PROVIDERS=groq,openai,anthropic   # priority order; first provider with a key wins
 AI_GROQ_API_KEY=gsk-...          # Groq (api.groq.com, Llama models)
 # AI_OPENAI_API_KEY=sk-...
-# AI_GEMINI_API_KEY=...
 # AI_ANTHROPIC_API_KEY=sk-ant-...
 ```
 

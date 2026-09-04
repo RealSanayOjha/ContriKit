@@ -204,7 +204,6 @@ class OpenAICompatibleProviderTests(SimpleTestCase):
 
         self.assertEqual(_key_hint_for("groq"), "AI_GROQ_API_KEY")
         self.assertEqual(_key_hint_for("openai"), "AI_OPENAI_API_KEY")
-        self.assertEqual(_key_hint_for("gemini"), "AI_GEMINI_API_KEY")
 
         groq_provider = OpenAICompatibleProvider(
             ProviderConfig(
