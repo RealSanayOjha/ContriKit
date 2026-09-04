@@ -110,7 +110,7 @@ class RouterTests(SimpleTestCase):
 
     def test_router_raises_when_no_provider_configured(self):
         router = LLMRouter([FakeProvider(configured=False)])
-        with self.assertRaises(LLMProviderUnavailableError):
+        with self.assertRaises(LLMConfigurationError):
             router.chat(ChatRequest(messages=(ChatMessage("user", "hi"),)))
 
     def test_health_reports_configured_state(self):
@@ -553,6 +553,26 @@ class ProviderCredentialCheckTests(SimpleTestCase):
     assistant looks broken instead of unconfigured; ``manage.py check`` /
     ``runserver`` must say so.
     """
+
+    def setUp(self):
+        # Provide a real (temp) .env with the key unset so the check only
+        # reports the credential warning and not "file missing" (ai.W004).
+        import tempfile
+        from pathlib import Path
+
+        from ai import env_diagnostics
+
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        env_file = Path(tmp.name) / ".env"
+        env_file.write_text("AI_GROQ_API_KEY=\n", encoding="utf-8")
+        patcher = mock.patch.object(
+            env_diagnostics, "find_env_file", return_value=str(env_file)
+        )
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.addCleanup(env_diagnostics._raw_file_values.cache_clear)
+        self.addCleanup(env_diagnostics._raw_entries.cache_clear)
 
     def test_warns_when_no_provider_has_credentials(self):
         with override_settings(

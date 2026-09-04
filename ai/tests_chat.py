@@ -14,7 +14,11 @@ from django.test import Client, TestCase, override_settings
 from ai.services import (
     AIServiceError,
     ChatResponse,
+    LLMAuthenticationError,
+    LLMConfigurationError,
+    LLMProviderServerError,
     LLMProviderUnavailableError,
+    LLMRateLimitError,
     LLMTimeoutError,
     UsageStats,
 )
@@ -167,6 +171,56 @@ class ChatEndpointTestCase(TestCase):
         response = self.post_json({"message": "hi"})
         self.assertEqual(response.status_code, 503)
         self.assertEqual(json.loads(response.content)["code"], "ai_unavailable")
+
+    @mock.patch(
+        "ai.views.ai_assistant_chat",
+        side_effect=LLMConfigurationError("no key"),
+    )
+    def test_unconfigured_maps_to_503_with_hint(self, mock_chat):
+        """No credentials: report a config problem and name the env var."""
+        self.client.force_login(self.user)
+        response = self.post_json({"message": "hi"})
+        data = json.loads(response.content)
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(data["code"], "ai_not_configured")
+        self.assertIn("AI_GROQ_API_KEY", data["error"])
+        self.assertEqual(data["hint"], "AI_GROQ_API_KEY")
+
+    @mock.patch(
+        "ai.views.ai_assistant_chat",
+        side_effect=LLMAuthenticationError("401 bad key"),
+    )
+    def test_auth_failure_maps_to_503(self, mock_chat):
+        """A key IS set but Groq rejects it — must not say 'not configured'."""
+        self.client.force_login(self.user)
+        response = self.post_json({"message": "hi"})
+        data = json.loads(response.content)
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(data["code"], "provider_auth_failed")
+        self.assertIn("AI_GROQ_API_KEY", data["error"])
+        self.assertNotIn("not configured", data["error"])
+
+    @mock.patch(
+        "ai.views.ai_assistant_chat",
+        side_effect=LLMProviderServerError("500"),
+    )
+    def test_provider_server_error_maps_to_503(self, mock_chat):
+        self.client.force_login(self.user)
+        response = self.post_json({"message": "hi"})
+        data = json.loads(response.content)
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(data["code"], "provider_error")
+
+    @mock.patch(
+        "ai.views.ai_assistant_chat",
+        side_effect=LLMRateLimitError("429"),
+    )
+    def test_rate_limit_maps_to_429(self, mock_chat):
+        self.client.force_login(self.user)
+        response = self.post_json({"message": "hi"})
+        data = json.loads(response.content)
+        self.assertEqual(response.status_code, 429)
+        self.assertEqual(data["code"], "provider_rate_limited")
 
     @mock.patch("ai.views.ai_assistant_chat", side_effect=LLMTimeoutError("slow"))
     def test_timeout_maps_to_504(self, mock_chat):

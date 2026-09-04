@@ -21,6 +21,7 @@ from .services import (
     AIServiceError,
     LLMAuthenticationError,
     LLMConfigurationError,
+    LLMProviderServerError,
     LLMProviderUnavailableError,
     LLMRateLimitError,
     LLMTimeoutError,
@@ -95,27 +96,70 @@ def ai_chat_view(request):
             history=history,
             tool_events=tool_events,
         )
-    except (LLMConfigurationError, LLMProviderUnavailableError) as exc:
-        logger.warning("AI chat unavailable: %s", exc)
+    except LLMConfigurationError as exc:
+        # No provider credentials at all (e.g. AI_GROQ_API_KEY empty/unset).
+        logger.warning("AI chat not configured: %s", exc)
         return JsonResponse(
-            {"error": "The AI assistant is not configured yet.", "code": "ai_unavailable"},
+            {
+                "error": (
+                    "The AI assistant is not configured yet. Set "
+                    "AI_GROQ_API_KEY in your .env file (see .env.example) and "
+                    "restart the server, then test with `python manage.py ai_test`."
+                ),
+                "code": "ai_not_configured",
+                "hint": "AI_GROQ_API_KEY",
+            },
             status=503,
-        )
-    except LLMTimeoutError:
-        return JsonResponse(
-            {"error": "The AI assistant is taking too long. Please try again.", "code": "ai_timeout"},
-            status=504,
-        )
-    except LLMRateLimitError:
-        return JsonResponse(
-            {"error": "The AI provider is busy. Please try again shortly.", "code": "provider_rate_limited"},
-            status=429,
         )
     except LLMAuthenticationError as exc:
+        # A key IS set but the provider rejected it (HTTP 401/403).
         logger.error("AI provider auth failure: %s", exc)
         return JsonResponse(
-            {"error": "The AI assistant is temporarily unavailable.", "code": "ai_unavailable"},
+            {
+                "error": (
+                    "The AI provider rejected the API key. Check that "
+                    "AI_GROQ_API_KEY in your .env file is a valid Groq key "
+                    "(it starts with gsk_)."
+                ),
+                "code": "provider_auth_failed",
+            },
             status=503,
+        )
+    except LLMProviderServerError as exc:
+        logger.error("AI provider server error: %s", exc)
+        return JsonResponse(
+            {
+                "error": "The AI provider is having trouble right now. Please try again shortly.",
+                "code": "provider_error",
+            },
+            status=503,
+        )
+    except LLMProviderUnavailableError as exc:
+        logger.warning("AI provider unavailable: %s", exc)
+        return JsonResponse(
+            {
+                "error": "The AI provider is unreachable right now. Please check your connection and try again shortly.",
+                "code": "ai_unavailable",
+            },
+            status=503,
+        )
+    except LLMTimeoutError as exc:
+        logger.warning("AI chat timed out: %s", exc)
+        return JsonResponse(
+            {
+                "error": "The AI assistant is taking too long. Please try again.",
+                "code": "ai_timeout",
+            },
+            status=504,
+        )
+    except LLMRateLimitError as exc:
+        logger.warning("AI provider rate limited: %s", exc)
+        return JsonResponse(
+            {
+                "error": "The AI provider is busy. Please try again shortly.",
+                "code": "provider_rate_limited",
+            },
+            status=429,
         )
     except AIServiceError as exc:
         logger.exception("AI chat failed: %s", exc)

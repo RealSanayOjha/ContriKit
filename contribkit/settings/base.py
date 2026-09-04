@@ -1,8 +1,4 @@
-import os
-from pathlib import Path
-from decouple import config
-
-BASE_DIR = Path(__file__).resolve().parent.parent.parent
+from ._env import BASE_DIR, config
 
 SECRET_KEY = config('SECRET_KEY', default='django-insecure-dev-key-contribkit-2026')
 

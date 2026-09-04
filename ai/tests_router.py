@@ -206,6 +206,15 @@ class RouterFallbackTests(SimpleTestCase):
         with self.assertRaises(LLMProviderUnavailableError):
             router.chat(request())
 
+    def test_all_fail_preserves_concrete_error_type(self):
+        # A real (bad/revoked) key must surface as an auth error, not as a
+        # generic "provider unavailable" — otherwise the UI reports the model
+        # as "not configured" even though a key is present.
+        primary = FakeProvider(name="primary", error=LLMAuthenticationError("bad key", provider="primary"))
+        router = LLMRouter([primary], retries=0)
+        with self.assertRaises(LLMAuthenticationError):
+            router.chat(request())
+
     def test_fallback_disabled_raises_original_error(self):
         primary = FakeProvider(name="primary", error=LLMTimeoutError("slow"))
         router = LLMRouter([primary], fallback=False, retries=0)
@@ -238,7 +247,7 @@ class RouterRetryTests(SimpleTestCase):
     def test_retries_exhausted_raises(self):
         provider = FakeProvider(name="p", error=LLMTimeoutError("slow"))
         router = LLMRouter([provider], retries=2, retry_backoff=0)
-        with self.assertRaises(LLMProviderUnavailableError):
+        with self.assertRaises(LLMTimeoutError):
             router.chat(request())
         self.assertEqual(provider.calls, 3)  # 1 initial + 2 retries
 

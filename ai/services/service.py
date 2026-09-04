@@ -133,6 +133,8 @@ class AIService:
 
     def health(self) -> dict:
         """Diagnostics for monitoring/health checks (no secrets, no API call)."""
+        from ai.env_diagnostics import env_health_payload
+
         providers = self.router.health()
         configured = [p["provider"] for p in providers if p.get("configured")]
         active = None
@@ -146,6 +148,7 @@ class AIService:
             "service": "contribkit-ai",
             "active_provider": active if active else (configured[0] if configured else None),
             "providers": providers,
+            "configuration": env_health_payload(),
             "tools": {
                 "enabled": tools_enabled,
                 "count": len(self.tools.names()) if tools_enabled else 0,
