@@ -26,8 +26,7 @@ from django.conf import settings
 
 from .exceptions import AIServiceError, LLMConfigurationError
 from .prompts import build_system_prompt
-from .providers import get_provider_class, get_provider_defaults
-from .providers.base import LLMProvider
+from .providers import PROVIDER_REGISTRY, get_provider_class, get_provider_defaults
 from .router import LLMRouter
 from .tools import ToolContext, ToolRegistry, build_default_tool_registry
 from .types import ChatMessage, ChatRequest, ChatResponse, ProviderConfig
@@ -39,21 +38,13 @@ _ai_service: "AIService | None" = None
 
 MAX_TOOL_ROUNDS = 4
 
-# Settings key used for each provider's API key; aliases share a key source.
+# Settings key used for Groq's API key. Other vendor names are not supported.
 PROVIDER_KEY_SETTINGS = {
-    "openai": "AI_OPENAI_API_KEY",
-    "openai_compatible": "AI_OPENAI_API_KEY",
     "groq": "AI_GROQ_API_KEY",
-    "gemini": "AI_GEMINI_API_KEY",
-    "anthropic": "AI_ANTHROPIC_API_KEY",
 }
 
 PROVIDER_DEFAULT_PRIORITY = {
-    "openai": 10,
-    "openai_compatible": 10,
-    "groq": 15,
-    "gemini": 30,
-    "anthropic": 40,
+    "groq": 10,
 }
 
 
@@ -199,14 +190,17 @@ class AIService:
 
 
 def _provider_names() -> list[str]:
-    """Priority-ordered provider list from settings (AI_PROVIDERS).
+    """Provider list from settings — Groq is the only supported backend.
 
-    Backward compatible: if AI_PROVIDERS is not set, fall back to the
-    single AI_PROVIDER setting used by earlier versions.
+    Reads ``AI_PROVIDERS`` / ``AI_PROVIDER`` so leftover multi-vendor env
+    values still parse, then keeps only ``groq``. If nothing valid remains
+    (empty list, or only openai/gemini/anthropic leftovers), falls back to
+    Groq so the chatbot never tries another vendor.
     """
-    raw = getattr(settings, "AI_PROVIDERS", "") or getattr(settings, "AI_PROVIDER", "openai")
+    raw = getattr(settings, "AI_PROVIDERS", "") or getattr(settings, "AI_PROVIDER", "groq")
     names = [name.strip().lower() for name in str(raw).split(",") if name.strip()]
-    return names or ["openai"]
+    known = [name for name in names if name in PROVIDER_REGISTRY]
+    return known or ["groq"]
 
 
 def _provider_setting(name: str, suffix: str, default):

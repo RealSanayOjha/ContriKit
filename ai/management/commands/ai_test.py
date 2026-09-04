@@ -1,12 +1,12 @@
 """CLI smoke test for the AI service layer.
 
 Sends one message through the full pipeline (AIService → LLMRouter →
-LLMProvider) without any UI or database. Useful for verifying credentials
-before building the chat feature.
+GroqProvider) without any UI or database. Useful for verifying the Groq
+key before using the chat widget.
 
 Usage:
     python manage.py ai_test "What is a good first issue for a beginner?"
-    python manage.py ai_test "Explain how git rebase works" --model gpt-4o-mini
+    python manage.py ai_test "Explain how git rebase works" --model llama-3.3-70b-versatile
 """
 
 from django.core.management.base import BaseCommand, CommandError
@@ -20,7 +20,7 @@ DEFAULT_TEST_MESSAGE = (
 
 
 class Command(BaseCommand):
-    help = "Send a single test message to the configured LLM provider (no UI/DB required)."
+    help = "Send a single test message to Groq (no UI/DB required)."
 
     def add_arguments(self, parser):
         parser.add_argument(
@@ -32,19 +32,19 @@ class Command(BaseCommand):
         parser.add_argument(
             "--model",
             default=None,
-            help="Override the model (defaults to the AI_OPENAI_MODEL setting).",
+            help="Override the model (defaults to the AI_GROQ_MODEL setting).",
         )
         parser.add_argument(
             "--temperature",
             type=float,
             default=None,
-            help="Override temperature (defaults to AI_OPENAI_TEMPERATURE).",
+            help="Override temperature (defaults to AI_GROQ_TEMPERATURE).",
         )
         parser.add_argument(
             "--max-tokens",
             type=int,
             default=None,
-            help="Override max response tokens (defaults to AI_OPENAI_MAX_TOKENS).",
+            help="Override max response tokens (defaults to AI_GROQ_MAX_TOKENS).",
         )
 
     def handle(self, *args, **options):
@@ -52,10 +52,8 @@ class Command(BaseCommand):
 
         if not service.is_configured():
             raise CommandError(
-                "AI is not configured: no LLM provider has credentials. "
-                "Set at least one provider key in your environment / .env file first "
-                "(e.g. AI_GROQ_API_KEY for Groq, AI_OPENAI_API_KEY for OpenAI, "
-                "AI_GEMINI_API_KEY, AI_ANTHROPIC_API_KEY)."
+                "AI is not configured: Groq has no credentials. "
+                "Set AI_GROQ_API_KEY in your environment / .env file first."
             )
 
         message = options["message"] or DEFAULT_TEST_MESSAGE
@@ -64,7 +62,7 @@ class Command(BaseCommand):
             ChatMessage(role="user", content=message),
         ]
 
-        self.stdout.write(self.style.WARNING("Sending test message to LLM provider..."))
+        self.stdout.write(self.style.WARNING("Sending test message to Groq..."))
         try:
             response = service.chat(
                 messages,

@@ -28,8 +28,8 @@ User = get_user_model()
 def fake_reply(message=None, **kwargs):
     return ChatResponse(
         content="Hello from the assistant!",
-        provider="openai",
-        model="gpt-4o-mini",
+        provider="groq",
+        model="llama-3.3-70b-versatile",
         usage=UsageStats(prompt_tokens=5, completion_tokens=9, total_tokens=14),
     )
 
@@ -86,8 +86,8 @@ class ChatEndpointTestCase(TestCase):
         self.assertEqual(response.status_code, 200)
         data = json.loads(response.content)
         self.assertEqual(data["reply"], "Hello from the assistant!")
-        self.assertEqual(data["provider"], "openai")
-        self.assertEqual(data["model"], "gpt-4o-mini")
+        self.assertEqual(data["provider"], "groq")
+        self.assertEqual(data["model"], "llama-3.3-70b-versatile")
 
         kwargs = mock_chat.call_args.kwargs
         self.assertEqual(kwargs["user"].username, "chatter")
