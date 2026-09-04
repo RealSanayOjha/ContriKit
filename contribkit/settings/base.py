@@ -54,6 +54,13 @@ TEMPLATES = [
             'context_processors': [
                 'django.template.context_processors.debug',
                 'django.template.context_processors.request',
+                # Publishes `{{ csrf_token }}` to every template. base.html
+                # renders it into <meta name="csrf-token"> so the same-origin
+                # fetch() calls (AI chat, issue bookmark) can read a token
+                # without depending on document.cookie. This is one of
+                # Django's default context processors; without it the
+                # variable renders as an empty string.
+                'django.template.context_processors.csrf',
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
                 'core.context_processors.role_context',

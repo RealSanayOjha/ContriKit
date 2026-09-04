@@ -11,6 +11,7 @@ from unittest import mock
 import requests
 from django.test import RequestFactory, SimpleTestCase, override_settings
 
+from ai.checks import ai_provider_credentials
 from ai.services import (
     AIService,
     AIServiceError,
@@ -516,3 +517,49 @@ class HealthViewTests(SimpleTestCase):
             response = ai_health_view(request)
         data = json.loads(response.content)
         self.assertNotIn("super-secret-key", str(data))
+
+
+class ProviderCredentialCheckTests(SimpleTestCase):
+    """The startup warning that explains a silent, request-free 503.
+
+    With no credentials the router never makes an outbound call, so the
+    assistant looks broken instead of unconfigured; ``manage.py check`` /
+    ``runserver`` must say so.
+    """
+
+    def test_warns_when_no_provider_has_credentials(self):
+        with override_settings(
+            AI_PROVIDERS="openai,grok",
+            AI_OPENAI_API_KEY="",
+            AI_GROK_API_KEY="",
+        ):
+            warnings = ai_provider_credentials(None)
+
+        self.assertEqual(len(warnings), 1)
+        self.assertEqual(warnings[0].id, "ai.W001")
+        # The hint has to name settings the developer can actually set.
+        self.assertIn("AI_OPENAI_API_KEY", warnings[0].hint)
+        self.assertIn("AI_GROK_API_KEY", warnings[0].hint)
+        self.assertIn("manage.py ai_test", warnings[0].hint)
+
+    def test_silent_when_a_provider_has_credentials(self):
+        with override_settings(
+            AI_PROVIDERS="openai,grok",
+            AI_OPENAI_API_KEY="sk-configured",
+            AI_GROK_API_KEY="",
+        ):
+            self.assertEqual(ai_provider_credentials(None), [])
+
+    def test_silent_when_only_a_lower_priority_provider_is_configured(self):
+        with override_settings(
+            AI_PROVIDERS="openai,anthropic",
+            AI_OPENAI_API_KEY="",
+            AI_ANTHROPIC_API_KEY="sk-ant-configured",
+        ):
+            self.assertEqual(ai_provider_credentials(None), [])
+
+    def test_unknown_provider_names_do_not_crash_the_check(self):
+        with override_settings(AI_PROVIDERS="not_a_provider", AI_OPENAI_API_KEY=""):
+            warnings = ai_provider_credentials(None)
+        self.assertEqual(len(warnings), 1)
+        self.assertEqual(warnings[0].id, "ai.W001")

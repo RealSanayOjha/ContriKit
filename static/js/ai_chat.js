@@ -27,6 +27,17 @@ function initAiChat() {
   const loginUrl = root.dataset.loginUrl || '/accounts/login/';
   let busy = false;
 
+  /* ── CSRF ──
+     base.html publishes the token as <meta name="csrf-token">; the cookie is
+     the fallback. Django rejects a POST without it (403 "CSRF cookie not
+     set"), so this must resolve to a real token before we send anything. */
+  function csrfToken() {
+    const meta = document.querySelector('meta[name="csrf-token"]');
+    const fromMeta = meta && meta.getAttribute('content');
+    if (fromMeta) return fromMeta;
+    return typeof getCookie === 'function' ? getCookie('csrftoken') : null;
+  }
+
   /* ── Open / close ── */
   function openPanel() {
     panel.hidden = false;
@@ -105,6 +116,18 @@ function initAiChat() {
       return;
     }
 
+    // Resolve the token *before* touching the busy state: an early return
+    // after locking the input would leave the form disabled forever.
+    const token = csrfToken();
+    if (!token) {
+      hideEmptyState();
+      appendMessage(
+        'error',
+        'I could not read your security token. Please reload the page and try again.'
+      );
+      return;
+    }
+
     busy = true;
     input.disabled = true;
     sendBtn.disabled = true;
@@ -115,18 +138,11 @@ function initAiChat() {
     autoResize();
     showTyping();
 
-    const csrfToken = getCookie('csrftoken');
-    if (!csrfToken) {
-      // Session expired / cookie missing — follow the login convention.
-      window.location.href = loginUrl;
-      return;
-    }
-
     try {
       const response = await fetch('/ai/chat/', {
         method: 'POST',
         headers: {
-          'X-CSRFToken': csrfToken,
+          'X-CSRFToken': token,
           'Content-Type': 'application/json',
           'X-Requested-With': 'XMLHttpRequest',
         },
