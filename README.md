@@ -72,6 +72,51 @@
 
 ---
 
+## AI Contribution Assistant (LLM setup)
+
+The floating assistant (`templates/ai/widget.html` + `static/js/ai_chat.js`) talks
+to **your own server only**, via `POST /ai/chat/`. The server then calls the LLM
+provider — API keys live in `.env` and never reach the browser.
+
+**With no API key the assistant cannot work, and it fails quietly:** `/ai/chat/`
+answers `503 {"code": "ai_unavailable"}` and the router short-circuits *before*
+making any outbound call, so nothing is ever sent to OpenAI/Grok/Gemini/Claude
+and the provider dashboard shows no request. `manage.py check` / `runserver`
+print the `ai.W001` warning at startup so this is visible immediately.
+
+### 1. Put at least one key in `.env`
+
+```dotenv
+AI_PROVIDERS=openai,grok,anthropic,gemini   # priority order; first provider with a key wins
+AI_OPENAI_API_KEY=sk-...
+# AI_GROK_API_KEY=xai-...
+# AI_GEMINI_API_KEY=...
+# AI_ANTHROPIC_API_KEY=sk-ant-...
+```
+
+Any OpenAI-compatible gateway works: point `AI_OPENAI_BASE_URL` at it
+(OpenRouter, Groq, an Azure-style gateway, or a local Ollama / LM Studio).
+
+### 2. Verify the credentials before debugging the UI
+
+```bash
+python manage.py ai_test                          # one real provider call, no DB/UI needed
+python manage.py ai_test "Explain git rebase" --model gpt-4o-mini
+curl http://127.0.0.1:8000/ai/health/             # provider status; no secrets, no API call
+```
+
+### Troubleshooting
+
+| Symptom | Cause |
+| --- | --- |
+| `ai.W001` warning at startup; chat replies "The AI assistant is not configured yet." | No API key in `.env` — see step 1. No LLM request is made in this state. |
+| Chat replies "temporarily unavailable"; server log says the provider rejected the API key | Key is wrong or revoked (provider answered 401/403). |
+| "The AI provider is busy" | Provider rate limit (429); the router retries, then falls back to the next provider in `AI_PROVIDERS`. |
+| Widget shows "I could not read your security token" | The page has no CSRF token — reload once. `base.html` publishes it as `<meta name="csrf-token">`. |
+| Nothing at all happens and DevTools shows no `/ai/chat/` request | A JavaScript error before the request; check DevTools → Console. |
+
+---
+
 ## Sign in with Google (OAuth 2.0)
 
 Handled by [python-social-auth](https://python-social-auth.readthedocs.io/) (`social-auth-app-django`), which exposes `/login/google-oauth2/` (start) and `/complete/google-oauth2/` (callback).

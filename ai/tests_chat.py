@@ -5,6 +5,7 @@ limiting, session history, error mapping, and safe source resolution.
 """
 
 import json
+import re
 from unittest import mock
 
 from django.contrib.auth import get_user_model
@@ -193,6 +194,42 @@ class ChatEndpointTestCase(TestCase):
         # Only the successful turn's pair should exist.
         self.assertEqual(len(mock_chat.call_args_list), 2)
         self.assertEqual(len(mock_chat.call_args_list[1].kwargs["history"]), 0)
+
+
+class ChatCsrfTests(TestCase):
+    """/ai/chat/ must be reachable with the token base.html publishes.
+
+    Regression: the widget read the token from the ``csrftoken`` cookie only,
+    and no page ever issued that cookie, so the browser redirected to the
+    login page and never sent a request at all. This runs the real
+    ``CsrfViewMiddleware`` (``enforce_csrf_checks=True``) with a token scraped
+    from the rendered landing page — the exact value the widget sends.
+    """
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.user = User.objects.create_user(username="csrf_chatter", password="pw")
+
+    def test_chat_succeeds_with_the_token_from_the_page(self):
+        client = Client(enforce_csrf_checks=True)
+        client.force_login(self.user)
+        client.cookies.pop("csrftoken", None)  # never been issued a CSRF cookie
+
+        page = client.get("/").content.decode()
+        match = re.search(r'<meta name="csrf-token" content="([^"]+)"', page)
+        self.assertIsNotNone(match, "landing page published no csrf-token meta tag")
+
+        with mock.patch("ai.views.ai_assistant_chat", side_effect=fake_reply):
+            response = client.post(
+                "/ai/chat/",
+                data=json.dumps({"message": "How do I create a branch?"}),
+                content_type="application/json",
+                HTTP_X_CSRFTOKEN=match.group(1),
+                HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(json.loads(response.content)["reply"], "Hello from the assistant!")
 
 
 class BuildSourcesTests(TestCase):
