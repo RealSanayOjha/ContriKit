@@ -84,7 +84,6 @@ class ProviderRegistryTests(SimpleTestCase):
     def test_all_providers_registered(self):
         self.assertIn("openai", PROVIDER_REGISTRY)
         self.assertIn("groq", PROVIDER_REGISTRY)
-        self.assertIn("gemini", PROVIDER_REGISTRY)
         self.assertIn("anthropic", PROVIDER_REGISTRY)
 
     def test_removed_grok_and_xai_names_are_unknown(self):

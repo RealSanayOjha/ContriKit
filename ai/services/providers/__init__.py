@@ -9,7 +9,6 @@ Current providers:
     - ``openai_compatible`` Any OpenAI-compatible endpoint (explicit alias).
     - ``groq``            Groq (https://api.groq.com/openai/v1) — OpenAI-compatible
                           API hosting open models (e.g. llama-3.3-70b-versatile).
-    - ``gemini``          Google Gemini via its OpenAI-compatible endpoint.
     - ``anthropic``       Claude via the native Anthropic Messages API
                           (tool calling supported).
 """
@@ -23,7 +22,6 @@ PROVIDER_REGISTRY = {
     "openai": OpenAICompatibleProvider,
     "openai_compatible": OpenAICompatibleProvider,
     "groq": OpenAICompatibleProvider,
-    "gemini": OpenAICompatibleProvider,
     "anthropic": AnthropicProvider,
 }
 
@@ -32,10 +30,6 @@ PROVIDER_DEFAULTS = {
     "openai": {"base_url": "https://api.openai.com/v1", "model": "gpt-4o-mini"},
     "openai_compatible": {"base_url": "https://api.openai.com/v1", "model": "gpt-4o-mini"},
     "groq": {"base_url": "https://api.groq.com/openai/v1", "model": "llama-3.3-70b-versatile"},
-    "gemini": {
-        "base_url": "https://generativelanguage.googleapis.com/v1beta/openai",
-        "model": "gemini-2.0-flash",
-    },
     "anthropic": {"base_url": "https://api.anthropic.com/v1", "model": "claude-sonnet-4-5-20250929"},
 }
 

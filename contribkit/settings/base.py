@@ -214,7 +214,7 @@ SOCIAL_AUTH_PIPELINE = (
 # fallback, rate limiting, and queueing are added in later steps.
 # ---------------------------------------------------------------------------
 # Provider list, in priority order (first key with credentials wins, then
-# fallback). Accepts any of: openai, openai_compatible, groq, gemini,
+# fallback). Accepts any of: openai, openai_compatible, groq,
 # anthropic. Backward compatible: falls back to AI_PROVIDER when unset.
 AI_PROVIDERS = config('AI_PROVIDERS', default='')
 AI_PROVIDER = config('AI_PROVIDER', default='openai')
@@ -249,16 +249,6 @@ AI_GROQ_TEMPERATURE = config('AI_GROQ_TEMPERATURE', default=0.7, cast=float)
 AI_GROQ_PRIORITY = config('AI_GROQ_PRIORITY', default=15, cast=int)
 AI_GROQ_RATE_LIMIT = config('AI_GROQ_RATE_LIMIT', default=0, cast=int)
 
-
-# ── Google Gemini (OpenAI-compatible endpoint) ────────────────────────────
-AI_GEMINI_API_KEY = config('AI_GEMINI_API_KEY', default='')
-AI_GEMINI_BASE_URL = config('AI_GEMINI_BASE_URL', default='https://generativelanguage.googleapis.com/v1beta/openai')
-AI_GEMINI_MODEL = config('AI_GEMINI_MODEL', default='gemini-2.0-flash')
-AI_GEMINI_TIMEOUT = config('AI_GEMINI_TIMEOUT', default=60, cast=int)
-AI_GEMINI_MAX_TOKENS = config('AI_GEMINI_MAX_TOKENS', default=1024, cast=int)
-AI_GEMINI_TEMPERATURE = config('AI_GEMINI_TEMPERATURE', default=0.7, cast=float)
-AI_GEMINI_PRIORITY = config('AI_GEMINI_PRIORITY', default=30, cast=int)
-AI_GEMINI_RATE_LIMIT = config('AI_GEMINI_RATE_LIMIT', default=0, cast=int)
 
 # ── Anthropic Claude (native Messages API) ────────────────────────────────
 AI_ANTHROPIC_API_KEY = config('AI_ANTHROPIC_API_KEY', default='')

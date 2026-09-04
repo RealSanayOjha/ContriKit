@@ -44,7 +44,6 @@ PROVIDER_KEY_SETTINGS = {
     "openai": "AI_OPENAI_API_KEY",
     "openai_compatible": "AI_OPENAI_API_KEY",
     "groq": "AI_GROQ_API_KEY",
-    "gemini": "AI_GEMINI_API_KEY",
     "anthropic": "AI_ANTHROPIC_API_KEY",
 }
 
@@ -52,7 +51,6 @@ PROVIDER_DEFAULT_PRIORITY = {
     "openai": 10,
     "openai_compatible": 10,
     "groq": 15,
-    "gemini": 30,
     "anthropic": 40,
 }
 
