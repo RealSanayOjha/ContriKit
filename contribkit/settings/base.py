@@ -1,8 +1,4 @@
-import os
-from pathlib import Path
-from decouple import config
-
-BASE_DIR = Path(__file__).resolve().parent.parent.parent
+from ._env import BASE_DIR, config
 
 SECRET_KEY = config('SECRET_KEY', default='django-insecure-dev-key-contribkit-2026')
 
@@ -208,18 +204,14 @@ SOCIAL_AUTH_PIPELINE = (
 # ---------------------------------------------------------------------------
 # AI Contribution Assistant (backend service layer)
 #
-# The `ai` app talks to LLM providers from the server only; API keys are read
-# from the environment (.env) and are never exposed to templates or JavaScript.
-# One OpenAI-compatible provider is wired now; multi-provider prioritization,
-# fallback, rate limiting, and queueing are added in later steps.
+# The `ai` app talks to Groq from the server only; AI_GROQ_API_KEY is read
+# from the environment (.env) and is never exposed to templates or JavaScript.
+# Groq is the only LLM backend. OpenAI, Gemini, and Anthropic are not used.
 # ---------------------------------------------------------------------------
-# Provider list, in priority order (first key with credentials wins, then
-# fallback). Accepts any of: openai, openai_compatible, groq,
-# anthropic. Backward compatible: falls back to AI_PROVIDER when unset.
-AI_PROVIDERS = config('AI_PROVIDERS', default='')
-AI_PROVIDER = config('AI_PROVIDER', default='openai')
+AI_PROVIDERS = config('AI_PROVIDERS', default='groq')
+AI_PROVIDER = config('AI_PROVIDER', default='groq')
 
-# Multi-provider router behavior
+# Router behavior (retries / circuit breaker around Groq)
 AI_PROVIDER_FALLBACK = config('AI_PROVIDER_FALLBACK', default=True, cast=bool)
 AI_PROVIDER_RETRIES = config('AI_PROVIDER_RETRIES', default=2, cast=int)
 AI_PROVIDER_RETRY_BACKOFF = config('AI_PROVIDER_RETRY_BACKOFF', default=0.5, cast=float)
@@ -227,38 +219,17 @@ AI_PROVIDER_CIRCUIT_BREAKER = config('AI_PROVIDER_CIRCUIT_BREAKER', default=True
 AI_PROVIDER_CIRCUIT_FAILURE_THRESHOLD = config('AI_PROVIDER_CIRCUIT_FAILURE_THRESHOLD', default=3, cast=int)
 AI_PROVIDER_CIRCUIT_RESET_SECONDS = config('AI_PROVIDER_CIRCUIT_RESET_SECONDS', default=60, cast=int)
 
-# ── OpenAI (native / OpenAI-compatible endpoints) ─────────────────────────
-AI_OPENAI_API_KEY = config('AI_OPENAI_API_KEY', default='')
-AI_OPENAI_BASE_URL = config('AI_OPENAI_BASE_URL', default='https://api.openai.com/v1')
-AI_OPENAI_MODEL = config('AI_OPENAI_MODEL', default='gpt-4o-mini')
-AI_OPENAI_TIMEOUT = config('AI_OPENAI_TIMEOUT', default=60, cast=int)
-AI_OPENAI_MAX_TOKENS = config('AI_OPENAI_MAX_TOKENS', default=1024, cast=int)
-AI_OPENAI_TEMPERATURE = config('AI_OPENAI_TEMPERATURE', default=0.7, cast=float)
-AI_OPENAI_PRIORITY = config('AI_OPENAI_PRIORITY', default=10, cast=int)
-AI_OPENAI_RATE_LIMIT = config('AI_OPENAI_RATE_LIMIT', default=0, cast=int)
-
-# ── Groq (OpenAI-compatible API) ──────────────────────────────────────────
-# Groq hosts open models (Llama, Qwen, ...) at api.groq.com. Keys start with
-# gsk_ and the default model is llama-3.3-70b-versatile.
+# ── Groq ──────────────────────────────────────────────────────────────────
+# Groq hosts open models (Llama, …) at api.groq.com. Keys start with gsk_
+# and the default model is llama-3.3-70b-versatile.
 AI_GROQ_API_KEY = config('AI_GROQ_API_KEY', default='')
 AI_GROQ_BASE_URL = config('AI_GROQ_BASE_URL', default='https://api.groq.com/openai/v1')
 AI_GROQ_MODEL = config('AI_GROQ_MODEL', default='llama-3.3-70b-versatile')
 AI_GROQ_TIMEOUT = config('AI_GROQ_TIMEOUT', default=60, cast=int)
 AI_GROQ_MAX_TOKENS = config('AI_GROQ_MAX_TOKENS', default=1024, cast=int)
 AI_GROQ_TEMPERATURE = config('AI_GROQ_TEMPERATURE', default=0.7, cast=float)
-AI_GROQ_PRIORITY = config('AI_GROQ_PRIORITY', default=15, cast=int)
+AI_GROQ_PRIORITY = config('AI_GROQ_PRIORITY', default=10, cast=int)
 AI_GROQ_RATE_LIMIT = config('AI_GROQ_RATE_LIMIT', default=0, cast=int)
-
-
-# ── Anthropic Claude (native Messages API) ────────────────────────────────
-AI_ANTHROPIC_API_KEY = config('AI_ANTHROPIC_API_KEY', default='')
-AI_ANTHROPIC_BASE_URL = config('AI_ANTHROPIC_BASE_URL', default='https://api.anthropic.com/v1')
-AI_ANTHROPIC_MODEL = config('AI_ANTHROPIC_MODEL', default='claude-sonnet-4-5-20250929')
-AI_ANTHROPIC_TIMEOUT = config('AI_ANTHROPIC_TIMEOUT', default=60, cast=int)
-AI_ANTHROPIC_MAX_TOKENS = config('AI_ANTHROPIC_MAX_TOKENS', default=1024, cast=int)
-AI_ANTHROPIC_TEMPERATURE = config('AI_ANTHROPIC_TEMPERATURE', default=0.7, cast=float)
-AI_ANTHROPIC_PRIORITY = config('AI_ANTHROPIC_PRIORITY', default=40, cast=int)
-AI_ANTHROPIC_RATE_LIMIT = config('AI_ANTHROPIC_RATE_LIMIT', default=0, cast=int)
 
 # AI chat endpoint (works with the existing Django session — no DB changes)
 AI_CHAT_RATE_LIMIT = config('AI_CHAT_RATE_LIMIT', default=10, cast=int)

@@ -102,7 +102,12 @@ class LLMRouter:
     # ── Public API ──────────────────────────────────────────────────────────
 
     def chat(self, request: ChatRequest) -> ChatResponse:
-        """Send a normalized request to the best available provider."""
+        """Send a normalized request to the best available provider.
+
+        Raises the most concrete failure: the original provider error when
+        every provider fails, or ``LLMConfigurationError`` when no provider
+        has credentials at all.
+        """
         last_error: Optional[Exception] = None
         attempts = 0
 
@@ -138,14 +143,14 @@ class LLMRouter:
                 raise exc
 
         if last_error is not None:
-            raise LLMProviderUnavailableError(
-                f"All LLM providers failed to serve the request: {last_error}"
-            ) from last_error
+            # Preserve the concrete failure (auth error, timeout, rate limit,
+            # unreachable provider, ...) so callers/views can report the real
+            # cause instead of a generic "AI is not configured" message.
+            raise last_error
 
-        raise LLMProviderUnavailableError(
-            "No LLM provider is configured. Set at least one API key in your "
-            "environment (.env file), e.g. AI_GROQ_API_KEY, AI_OPENAI_API_KEY "
-            "or AI_ANTHROPIC_API_KEY, and try again."
+        raise LLMConfigurationError(
+            "No LLM provider is configured. Set AI_GROQ_API_KEY in your "
+            "environment (.env file) and try again."
         )
 
     def health(self) -> list[dict]:

@@ -1,11 +1,10 @@
-"""Tests for multi-provider routing and the Anthropic (Claude) provider.
+"""Tests for Groq routing: registry, retries, circuit breaker, settings wiring.
 
 No real LLM calls: HTTP is mocked and fake providers simulate failures to
 exercise priority ordering, fallback, retries/backoff, rate limiting, and the
 circuit breaker. Settings wiring is tested with override_settings.
 """
 
-import json
 from unittest import mock
 
 import requests
@@ -23,7 +22,6 @@ from ai.services import (
     LLMRouter,
     LLMTimeoutError,
     ProviderConfig,
-    ToolCall,
     UsageStats,
 )
 from ai.services import service as service_module
@@ -33,9 +31,8 @@ from ai.services.providers import (
     get_provider_class,
     get_provider_defaults,
 )
-from ai.services.providers.anthropic import AnthropicProvider
 from ai.services.providers.base import LLMProvider
-from ai.services.providers.openai_compatible import OpenAICompatibleProvider
+from ai.services.providers.groq import GroqProvider
 
 
 class FakeProvider(LLMProvider):
@@ -71,7 +68,7 @@ def request():
     return ChatRequest(messages=(ChatMessage(role="user", content="hi"),))
 
 
-def fake_anthropic_response(data, status_code=200):
+def fake_groq_response(data, status_code=200):
     response = mock.Mock(status_code=status_code)
     response.json.return_value = data
     response.text = "body"
@@ -81,65 +78,50 @@ def fake_anthropic_response(data, status_code=200):
 # ── Registry / vendor defaults ────────────────────────────────────────────
 
 class ProviderRegistryTests(SimpleTestCase):
-    def test_all_providers_registered(self):
-        self.assertIn("openai", PROVIDER_REGISTRY)
-        self.assertIn("groq", PROVIDER_REGISTRY)
-        self.assertIn("anthropic", PROVIDER_REGISTRY)
+    def test_only_groq_is_registered(self):
+        self.assertEqual(set(PROVIDER_REGISTRY), {"groq"})
+        self.assertIs(get_provider_class("groq"), GroqProvider)
 
-    def test_removed_grok_and_xai_names_are_unknown(self):
-        # xAI Grok support was removed; the project uses Groq only. The old
-        # names must resolve to a clear configuration error, never a provider.
-        with self.assertRaises(LLMConfigurationError):
-            get_provider_class("grok")
-        with self.assertRaises(LLMConfigurationError):
-            get_provider_class("xai")
-        self.assertNotIn("grok", PROVIDER_REGISTRY)
-        self.assertNotIn("xai", PROVIDER_REGISTRY)
+    def test_removed_vendor_names_are_unknown(self):
+        for name in ("openai", "openai_compatible", "gemini", "anthropic", "grok", "xai"):
+            with self.assertRaises(LLMConfigurationError):
+                get_provider_class(name)
+            self.assertNotIn(name, PROVIDER_REGISTRY)
 
-    def test_groq_uses_openai_compatible_class(self):
-        # Groq speaks the OpenAI-compatible wire protocol (own endpoint/key).
-        self.assertIs(get_provider_class("groq"), OpenAICompatibleProvider)
-
-    def test_anthropic_uses_native_class(self):
-        self.assertIs(get_provider_class("anthropic"), AnthropicProvider)
-
-    def test_vendor_defaults_present(self):
+    def test_vendor_defaults_are_groq(self):
         defaults = get_provider_defaults("groq")
         self.assertIn("https://api.groq.com", defaults["base_url"])
-        self.assertNotIn("https://api.openai.com", defaults["base_url"])
         self.assertIn("llama", defaults["model"])
-        self.assertIn("claude", get_provider_defaults("anthropic")["model"])
+        self.assertEqual(get_provider_defaults("anthropic"), {})
+        self.assertEqual(get_provider_defaults("openai"), {})
 
-    def test_available_providers_sorted(self):
-        names = available_providers()
-        self.assertIn("anthropic", names)
-        self.assertEqual(names, tuple(sorted(names)))
+    def test_available_providers_is_just_groq(self):
+        self.assertEqual(available_providers(), ("groq",))
 
 
-# ── Anthropic provider ─────────────────────────────────────────────────────
+# ── Groq HTTP provider (smoke via the registry class) ─────────────────────
 
-class AnthropicProviderTests(SimpleTestCase):
+class GroqProviderHttpTests(SimpleTestCase):
     def setUp(self):
-        self.provider = AnthropicProvider(
+        self.provider = GroqProvider(
             ProviderConfig(
-                name="anthropic",
-                api_key="sk-ant-test",
-                base_url="https://api.anthropic.test/v1",
-                model="claude-test",
+                name="groq",
+                api_key="gsk-test",
+                base_url="https://api.groq.com/openai/v1",
+                model="llama-3.3-70b-versatile",
                 timeout=5,
                 max_tokens=256,
                 temperature=0.4,
             )
         )
 
-    @mock.patch("ai.services.providers.anthropic.requests.post")
-    def test_builds_native_payload(self, mock_post):
-        mock_post.return_value = fake_anthropic_response(
+    @mock.patch("ai.services.providers.groq.requests.post")
+    def test_builds_chat_completions_payload(self, mock_post):
+        mock_post.return_value = fake_groq_response(
             {
-                "model": "claude-test",
-                "content": [{"type": "text", "text": "Hello from Claude!"}],
-                "stop_reason": "end_turn",
-                "usage": {"input_tokens": 10, "output_tokens": 5},
+                "model": "llama-3.3-70b-versatile",
+                "choices": [{"message": {"content": "Hello from Groq!"}}],
+                "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
             }
         )
         self.provider.chat(
@@ -152,93 +134,20 @@ class AnthropicProviderTests(SimpleTestCase):
         )
         payload = mock_post.call_args.kwargs["json"]
         headers = mock_post.call_args.kwargs["headers"]
-        self.assertEqual(headers["x-api-key"], "sk-ant-test")
-        self.assertEqual(headers["anthropic-version"], "2023-06-01")
-        self.assertEqual(payload["model"], "claude-test")
-        self.assertEqual(payload["max_tokens"], 256)
-        self.assertEqual(payload["system"], "be helpful")
-        self.assertEqual(payload["messages"][0], {"role": "user", "content": "hello"})
+        self.assertEqual(headers["Authorization"], "Bearer gsk-test")
+        self.assertIn("api.groq.com", mock_post.call_args.args[0])
+        self.assertEqual(payload["model"], "llama-3.3-70b-versatile")
+        self.assertEqual(payload["messages"][0], {"role": "system", "content": "be helpful"})
+        self.assertEqual(payload["messages"][1], {"role": "user", "content": "hello"})
 
-    @mock.patch("ai.services.providers.anthropic.requests.post")
-    def test_parses_text_and_tool_use(self, mock_post):
-        mock_post.return_value = fake_anthropic_response(
-            {
-                "model": "claude-test",
-                "content": [
-                    {"type": "text", "text": "Let me search."},
-                    {"type": "tool_use", "id": "toolu_1", "name": "search_issues", "input": {"q": "python"}},
-                ],
-                "stop_reason": "tool_use",
-                "usage": {"input_tokens": 8, "output_tokens": 4},
-            }
-        )
-        response = self.provider.chat(
-            ChatRequest(messages=(ChatMessage(role="user", content="find"),))
-        )
-        self.assertEqual(response.content, "Let me search.")
-        self.assertEqual(len(response.tool_calls), 1)
-        self.assertEqual(response.tool_calls[0].name, "search_issues")
-        self.assertEqual(response.tool_calls[0].arguments, {"q": "python"})
-        self.assertEqual(response.finish_reason, "tool_use")
-        self.assertEqual(response.usage.total_tokens, 12)
-
-    @mock.patch("ai.services.providers.anthropic.requests.post")
-    def test_round_trips_tool_result_message(self, mock_post):
-        mock_post.return_value = fake_anthropic_response(
-            {"model": "m", "content": [{"type": "text", "text": "done"}],
-             "stop_reason": "end_turn", "usage": {"input_tokens": 1, "output_tokens": 1}}
-        )
-        self.provider.chat(
-            ChatRequest(
-                messages=(
-                    ChatMessage(
-                        role="assistant",
-                        content="",
-                        tool_calls=(
-                            ToolCall(id="toolu_9", name="search_issues", arguments={"q": "x"}),
-                        ),
-                    ),
-                    ChatMessage(role="tool", content='{"results": []}', tool_call_id="toolu_9"),
-                )
-            )
-        )
-        payload = mock_post.call_args.kwargs["json"]
-        # Tool results are converted to a user message with tool_result blocks.
-        self.assertEqual(payload["messages"][1]["role"], "user")
-        self.assertEqual(payload["messages"][1]["content"][0]["type"], "tool_result")
-        self.assertEqual(payload["messages"][1]["content"][0]["tool_use_id"], "toolu_9")
-        self.assertEqual(payload["messages"][0]["content"][0]["type"], "tool_use")
-
-    @mock.patch("ai.services.providers.anthropic.requests.post")
-    def test_error_mapping(self, mock_post):
-        cases = [
-            (401, LLMAuthenticationError),
-            (429, LLMRateLimitError),
-            (500, LLMProviderError),  # now LLMProviderServerError subclass
-        ]
-        for status, expected in cases:
-            mock_post.return_value = fake_anthropic_response({}, status_code=status)
-            with self.assertRaises(expected):
-                self.provider.chat(
-                    ChatRequest(messages=(ChatMessage(role="user", content="hi"),))
-                )
-
-    @mock.patch("ai.services.providers.anthropic.requests.post")
+    @mock.patch("ai.services.providers.groq.requests.post")
     def test_timeout_maps_to_typed_error(self, mock_post):
         mock_post.side_effect = requests.exceptions.Timeout("slow")
         with self.assertRaises(LLMTimeoutError):
             self.provider.chat(ChatRequest(messages=(ChatMessage(role="user", content="hi"),)))
 
-    @mock.patch("ai.services.providers.anthropic.requests.post")
-    def test_empty_response_raises_invalid(self, mock_post):
-        mock_post.return_value = fake_anthropic_response(
-            {"model": "m", "content": [], "stop_reason": "end_turn", "usage": {}}
-        )
-        with self.assertRaises(Exception):
-            self.provider.chat(ChatRequest(messages=(ChatMessage(role="user", content="hi"),)))
-
     def test_unconfigured_raises(self):
-        provider = AnthropicProvider(ProviderConfig(name="anthropic", api_key=""))
+        provider = GroqProvider(ProviderConfig(name="groq", api_key=""))
         self.assertFalse(provider.is_configured())
         with self.assertRaises(LLMConfigurationError):
             provider.chat(ChatRequest(messages=(ChatMessage(role="user", content="hi"),)))
@@ -297,6 +206,15 @@ class RouterFallbackTests(SimpleTestCase):
         with self.assertRaises(LLMProviderUnavailableError):
             router.chat(request())
 
+    def test_all_fail_preserves_concrete_error_type(self):
+        # A real (bad/revoked) key must surface as an auth error, not as a
+        # generic "provider unavailable" — otherwise the UI reports the model
+        # as "not configured" even though a key is present.
+        primary = FakeProvider(name="primary", error=LLMAuthenticationError("bad key", provider="primary"))
+        router = LLMRouter([primary], retries=0)
+        with self.assertRaises(LLMAuthenticationError):
+            router.chat(request())
+
     def test_fallback_disabled_raises_original_error(self):
         primary = FakeProvider(name="primary", error=LLMTimeoutError("slow"))
         router = LLMRouter([primary], fallback=False, retries=0)
@@ -329,7 +247,7 @@ class RouterRetryTests(SimpleTestCase):
     def test_retries_exhausted_raises(self):
         provider = FakeProvider(name="p", error=LLMTimeoutError("slow"))
         router = LLMRouter([provider], retries=2, retry_backoff=0)
-        with self.assertRaises(LLMProviderUnavailableError):
+        with self.assertRaises(LLMTimeoutError):
             router.chat(request())
         self.assertEqual(provider.calls, 3)  # 1 initial + 2 retries
 
@@ -369,34 +287,23 @@ class RouterCircuitBreakerTests(SimpleTestCase):
         self.assertEqual(router.chat(request()).provider, "p")
 
 
-# ── Settings wiring: multiple providers from env ─────────────────────────
+# ── Settings wiring: Groq only ────────────────────────────────────────────
 
-class SettingsMultiProviderTests(SimpleTestCase):
+class SettingsGroqProviderTests(SimpleTestCase):
     def tearDown(self):
         service_module._ai_service = None
 
     @override_settings(
-        AI_PROVIDERS="openai, anthropic, groq",
-        AI_OPENAI_API_KEY="sk-openai",
-        AI_ANTHROPIC_API_KEY="sk-ant",
+        AI_PROVIDERS="groq",
         AI_GROQ_API_KEY="gsk-test",
-        AI_OPENAI_PRIORITY=5,
-        AI_ANTHROPIC_PRIORITY=1,  # anthropic should win despite list order
         AI_GROQ_MODEL="llama-custom",
     )
-    def test_builds_multiple_providers_with_priority(self):
+    def test_builds_groq_from_settings(self):
         router = service_module.build_default_router()
-        names = [p.name for p in router.providers]
-        self.assertEqual(names, ["openai", "anthropic", "groq"])
+        self.assertEqual([p.name for p in router.providers], ["groq"])
         self.assertTrue(router.fallback)
         self.assertEqual(router.retries, 2)
-
-        ordered = router._ordered_providers()
-        self.assertEqual(ordered[0].name, "anthropic")  # priority 1
-        self.assertEqual(ordered[0].config.api_key, "sk-ant")
-        self.assertEqual(ordered[1].name, "openai")
-        self.assertEqual(ordered[2].name, "groq")
-        groq = ordered[2]
+        groq = router.providers[0]
         self.assertEqual(groq.config.api_key, "gsk-test")
         self.assertEqual(groq.config.model, "llama-custom")
         self.assertIn("api.groq.com", groq.config.base_url)
@@ -408,21 +315,21 @@ class SettingsMultiProviderTests(SimpleTestCase):
         self.assertTrue(router.providers[0].is_configured())
 
     @override_settings(
-        AI_PROVIDERS="groq,grok",
+        AI_PROVIDERS="openai,anthropic,gemini,grok",
         AI_GROQ_API_KEY="gsk-test",
     )
-    def test_removed_grok_name_is_skipped_without_breaking_groq(self):
-        # Old .env files may still list "grok" in AI_PROVIDERS. The unknown
-        # name must be skipped with a warning while groq keeps working.
+    def test_removed_vendor_names_fall_back_to_groq(self):
+        # Old .env files may still list openai/anthropic/gemini. Those names
+        # are dropped and Groq is used instead.
         router = service_module.build_default_router()
         self.assertEqual([p.name for p in router.providers], ["groq"])
         self.assertTrue(router.providers[0].is_configured())
 
     @override_settings(
-        AI_PROVIDERS="groq",
+        AI_PROVIDERS="groq,openai,anthropic",
         AI_GROQ_API_KEY="gsk-test",
     )
-    def test_groq_only_configures_router(self):
+    def test_mixed_list_keeps_only_groq(self):
         router = service_module.build_default_router()
         self.assertEqual([p.name for p in router.providers], ["groq"])
         self.assertTrue(router.providers[0].is_configured())
@@ -432,27 +339,17 @@ class SettingsMultiProviderTests(SimpleTestCase):
         self.assertEqual(health["status"], "healthy")
 
     @override_settings(
-        AI_PROVIDERS="openai,annotated_provider",
-        AI_OPENAI_API_KEY="key",
-    )
-    def test_unknown_provider_skipped_without_breaking_others(self):
-        router = service_module.build_default_router()
-        self.assertEqual([p.name for p in router.providers], ["openai"])
-
-    @override_settings(
-        AI_PROVIDERS="openai,anthropic",
-        AI_OPENAI_API_KEY="",
-        AI_ANTHROPIC_API_KEY="sk-ant",
+        AI_PROVIDERS="groq",
+        AI_GROQ_API_KEY="gsk-test",
         AI_PROVIDER_RETRIES=3,
         AI_PROVIDER_RETRY_BACKOFF=0.1,
     )
-    def test_service_uses_first_configured_provider(self):
+    def test_service_uses_groq(self):
         service = service_module.get_ai_service()
         self.assertTrue(service.is_configured())
         self.assertEqual(service.router.retries, 3)
         health = service.health()
         self.assertEqual(health["status"], "ok")
-        self.assertEqual(health["active_provider"], "anthropic")
-        self.assertTrue(health["extensions"]["multi_provider_priority"])
+        self.assertEqual(health["active_provider"], "groq")
         self.assertTrue(health["extensions"]["fallback"])
         self.assertTrue(health["extensions"]["circuit_breaker"])

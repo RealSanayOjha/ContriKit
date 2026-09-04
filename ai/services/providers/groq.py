@@ -1,16 +1,18 @@
-"""OpenAI-compatible Chat Completions provider.
+"""Groq Chat Completions provider.
 
-Talks to any endpoint implementing `POST {base_url}/chat/completions` with a
-Bearer token (OpenAI, Azure OpenAI-style gateways, OpenRouter, local
-Ollama/LM Studio, etc.). Named vendors with their own defaults — ``groq``
-(Groq, api.groq.com) — all share
-this class; only the base URL / key / model differ. Using plain `requests`
-keeps the provider dependency free: `requests` is already a project
-dependency (used for GitHub API), so no new package is required and the code
-stays portable to PythonAnywhere.
+Talks to Groq's Chat Completions endpoint:
 
-Supports the native `tools` (function calling) format used by OpenAI-compatible
-endpoints; tool *execution* happens in the service layer, never here.
+    POST {base_url}/chat/completions
+    Authorization: Bearer <AI_GROQ_API_KEY>
+
+Default endpoint is ``https://api.groq.com/openai/v1`` (Groq's documented
+Chat Completions URL) with ``llama-3.3-70b-versatile``. Using plain
+``requests`` keeps the provider dependency-free: ``requests`` is already a
+project dependency (GitHub API), so no extra package is required and the
+code stays portable to PythonAnywhere.
+
+Supports Groq function calling; tool *execution* happens in the service
+layer, never here.
 """
 
 import json
@@ -33,25 +35,14 @@ from .base import LLMProvider
 
 logger = logging.getLogger(__name__)
 
-# Maps a provider name to the .env setting holding its API key, so auth-error
-# messages point at the key the developer actually needs to fix. Without this,
-# a Groq 401 misleadingly said "Check AI_OPENAI_API_KEY".
-PROVIDER_KEY_HINTS = {
-    "openai": "AI_OPENAI_API_KEY",
-    "openai_compatible": "AI_OPENAI_API_KEY",
-    "groq": "AI_GROQ_API_KEY",
-}
+GROQ_KEY_HINT = "AI_GROQ_API_KEY"
 
 
-def _key_hint_for(provider_name: str) -> str:
-    return PROVIDER_KEY_HINTS.get(provider_name.strip().lower(), "AI_OPENAI_API_KEY")
+class GroqProvider(LLMProvider):
+    """Chat Completions provider for Groq."""
 
-
-class OpenAICompatibleProvider(LLMProvider):
-    """Chat Completions provider for OpenAI and compatible endpoints."""
-
-    name = "openai"
-    display_name = "OpenAI (Chat Completions)"
+    name = "groq"
+    display_name = "Groq"
 
     def is_configured(self) -> bool:
         return bool(self.config.api_key)
@@ -142,7 +133,7 @@ class OpenAICompatibleProvider(LLMProvider):
         if status in (401, 403):
             raise LLMAuthenticationError(
                 f"Provider '{provider}' rejected the API key (HTTP {status}). "
-                f"Check {_key_hint_for(provider)}.",
+                f"Check {GROQ_KEY_HINT}.",
                 status_code=status,
                 provider=provider,
             )

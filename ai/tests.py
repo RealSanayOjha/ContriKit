@@ -36,7 +36,7 @@ from ai.services import (
 from ai.services import service as service_module
 from ai.services.providers import PROVIDER_REGISTRY, get_provider_class
 from ai.services.providers.base import LLMProvider
-from ai.services.providers.openai_compatible import OpenAICompatibleProvider
+from ai.services.providers.groq import GroqProvider
 from ai.services.tools import AITool
 from ai.views import ai_health_view
 
@@ -64,20 +64,23 @@ class FakeProvider(LLMProvider):
         )
 
 
-def fake_openai_response(data, status_code=200):
+def fake_groq_response(data, status_code=200):
     response = mock.Mock(status_code=status_code)
     response.json.return_value = data
     response.text = "provider response body"
     return response
 
 
-class OpenAIProviderRegistryTests(SimpleTestCase):
-    def test_registry_contains_openai(self):
-        self.assertIn("openai", PROVIDER_REGISTRY)
-        self.assertIs(get_provider_class("openai"), OpenAICompatibleProvider)
+class GroqProviderRegistryTests(SimpleTestCase):
+    def test_registry_contains_only_groq(self):
+        self.assertEqual(set(PROVIDER_REGISTRY), {"groq"})
+        self.assertIs(get_provider_class("groq"), GroqProvider)
 
-    def test_alias_resolves_to_same_provider(self):
-        self.assertIs(get_provider_class("openai_compatible"), OpenAICompatibleProvider)
+    def test_other_vendors_are_unknown(self):
+        for name in ("openai", "openai_compatible", "gemini", "anthropic", "claude"):
+            with self.assertRaises(LLMConfigurationError):
+                get_provider_class(name)
+            self.assertNotIn(name, PROVIDER_REGISTRY)
 
     def test_unknown_provider_raises_config_error(self):
         with self.assertRaises(LLMConfigurationError):
@@ -107,7 +110,7 @@ class RouterTests(SimpleTestCase):
 
     def test_router_raises_when_no_provider_configured(self):
         router = LLMRouter([FakeProvider(configured=False)])
-        with self.assertRaises(LLMProviderUnavailableError):
+        with self.assertRaises(LLMConfigurationError):
             router.chat(ChatRequest(messages=(ChatMessage("user", "hi"),)))
 
     def test_health_reports_configured_state(self):
@@ -117,14 +120,14 @@ class RouterTests(SimpleTestCase):
         self.assertEqual(health[1]["configured"], True)
 
 
-class OpenAICompatibleProviderTests(SimpleTestCase):
+class GroqProviderTests(SimpleTestCase):
     def setUp(self):
-        self.provider = OpenAICompatibleProvider(
+        self.provider = GroqProvider(
             ProviderConfig(
-                name="openai",
-                api_key="test-super-secret-key",
-                base_url="https://api.example.test/v1",
-                model="test-model",
+                name="groq",
+                api_key="gsk-test-super-secret-key",
+                base_url="https://api.groq.com/openai/v1",
+                model="llama-3.3-70b-versatile",
                 timeout=5,
                 max_tokens=64,
                 temperature=0.3,
@@ -137,11 +140,11 @@ class OpenAICompatibleProviderTests(SimpleTestCase):
             )
         )
 
-    @mock.patch("ai.services.providers.openai_compatible.requests.post")
+    @mock.patch("ai.services.providers.groq.requests.post")
     def test_sends_request_with_expected_payload(self, mock_post):
-        mock_post.return_value = fake_openai_response(
+        mock_post.return_value = fake_groq_response(
             {
-                "model": "test-model",
+                "model": "llama-3.3-70b-versatile",
                 "choices": [{"message": {"content": "Hi there!"}}],
                 "usage": {"prompt_tokens": 2, "completion_tokens": 1, "total_tokens": 3},
             }
@@ -152,17 +155,18 @@ class OpenAICompatibleProviderTests(SimpleTestCase):
         mock_post.assert_called_once()
         call_kwargs = mock_post.call_args.kwargs
         payload = call_kwargs["json"]
-        self.assertEqual(call_kwargs["headers"]["Authorization"], "Bearer test-super-secret-key")
-        self.assertEqual(payload["model"], "test-model")
+        self.assertEqual(call_kwargs["headers"]["Authorization"], "Bearer gsk-test-super-secret-key")
+        self.assertEqual(payload["model"], "llama-3.3-70b-versatile")
         self.assertEqual(payload["stream"], False)
         self.assertEqual(payload["messages"][0]["role"], "system")
         self.assertEqual(payload["messages"][1]["content"], "hello")
         self.assertEqual(response.content, "Hi there!")
         self.assertEqual(response.usage.total_tokens, 3)
+        self.assertEqual(response.provider, "groq")
 
-    @mock.patch("ai.services.providers.openai_compatible.requests.post")
+    @mock.patch("ai.services.providers.groq.requests.post")
     def test_request_overrides_apply(self, mock_post):
-        mock_post.return_value = fake_openai_response(
+        mock_post.return_value = fake_groq_response(
             {"model": "override-model", "choices": [{"message": {"content": "ok"}}]}
         )
         self.provider.chat(
@@ -178,88 +182,57 @@ class OpenAICompatibleProviderTests(SimpleTestCase):
         self.assertEqual(payload["temperature"], 0.9)
         self.assertEqual(payload["max_tokens"], 999)
 
-    @mock.patch("ai.services.providers.openai_compatible.requests.post")
+    @mock.patch("ai.services.providers.groq.requests.post")
     def test_timeout_raises_typed_error(self, mock_post):
         mock_post.side_effect = requests.exceptions.Timeout("timed out")
         with self.assertRaises(LLMTimeoutError):
             self.provider.chat(self.request)
 
-    @mock.patch("ai.services.providers.openai_compatible.requests.post")
+    @mock.patch("ai.services.providers.groq.requests.post")
     def test_connection_error_raises_unavailable(self, mock_post):
         mock_post.side_effect = requests.exceptions.ConnectionError("no route")
         with self.assertRaises(LLMProviderUnavailableError):
             self.provider.chat(self.request)
 
-    @mock.patch("ai.services.providers.openai_compatible.requests.post")
+    @mock.patch("ai.services.providers.groq.requests.post")
     def test_auth_error_maps_401(self, mock_post):
-        mock_post.return_value = fake_openai_response({}, status_code=401)
-        with self.assertRaises(LLMAuthenticationError):
-            self.provider.chat(self.request)
-
-    @mock.patch("ai.services.providers.openai_compatible.requests.post")
-    def test_auth_error_names_correct_key_per_provider(self, mock_post):
-        # A Groq 401 must say AI_GROQ_API_KEY (not AI_OPENAI_API_KEY),
-        # otherwise a bad key is undebuggable from the logs.
-        from ai.services.providers.openai_compatible import _key_hint_for
-
-        self.assertEqual(_key_hint_for("groq"), "AI_GROQ_API_KEY")
-        self.assertEqual(_key_hint_for("openai"), "AI_OPENAI_API_KEY")
-
-        groq_provider = OpenAICompatibleProvider(
-            ProviderConfig(
-                name="groq",
-                api_key="gsk-test",
-                base_url="https://api.groq.com/openai/v1",
-                model="llama-3.3-70b-versatile",
-            )
-        )
-        mock_post.return_value = fake_openai_response({}, status_code=401)
+        mock_post.return_value = fake_groq_response({}, status_code=401)
         with self.assertRaises(LLMAuthenticationError) as ctx:
-            groq_provider.chat(self.request)
+            self.provider.chat(self.request)
         self.assertIn("AI_GROQ_API_KEY", str(ctx.exception))
         self.assertIn("groq", str(ctx.exception))
 
-    @mock.patch("ai.services.providers.openai_compatible.requests.post")
-    def test_groq_posts_to_groq_endpoint_with_bearer_key(self, mock_post):
-        # The Groq provider must call api.groq.com with the Groq key as a
-        # Bearer token and a Llama model name.
-        groq_provider = OpenAICompatibleProvider(
-            ProviderConfig(
-                name="groq",
-                api_key="gsk-test",
-                base_url="https://api.groq.com/openai/v1",
-                model="llama-3.3-70b-versatile",
-            )
-        )
-        mock_post.return_value = fake_openai_response(
+    @mock.patch("ai.services.providers.groq.requests.post")
+    def test_posts_to_groq_endpoint_with_bearer_key(self, mock_post):
+        mock_post.return_value = fake_groq_response(
             {
                 "model": "llama-3.3-70b-versatile",
                 "choices": [{"message": {"content": "Hello from Groq!"}}],
             }
         )
-        response = groq_provider.chat(self.request)
+        response = self.provider.chat(self.request)
         called_url = mock_post.call_args.args[0]
         self.assertIn("api.groq.com", called_url)
         headers = mock_post.call_args.kwargs["headers"]
-        self.assertEqual(headers["Authorization"], "Bearer gsk-test")
+        self.assertEqual(headers["Authorization"], "Bearer gsk-test-super-secret-key")
         payload = mock_post.call_args.kwargs["json"]
         self.assertEqual(payload["model"], "llama-3.3-70b-versatile")
         self.assertEqual(response.content, "Hello from Groq!")
         self.assertEqual(response.provider, "groq")
 
-    @mock.patch("ai.services.providers.openai_compatible.requests.post")
+    @mock.patch("ai.services.providers.groq.requests.post")
     def test_rate_limit_maps_429(self, mock_post):
-        mock_post.return_value = fake_openai_response({}, status_code=429)
+        mock_post.return_value = fake_groq_response({}, status_code=429)
         with self.assertRaises(LLMRateLimitError):
             self.provider.chat(self.request)
 
-    @mock.patch("ai.services.providers.openai_compatible.requests.post")
+    @mock.patch("ai.services.providers.groq.requests.post")
     def test_server_error_maps_5xx(self, mock_post):
-        mock_post.return_value = fake_openai_response({}, status_code=500)
+        mock_post.return_value = fake_groq_response({}, status_code=500)
         with self.assertRaises(LLMProviderError):
             self.provider.chat(self.request)
 
-    @mock.patch("ai.services.providers.openai_compatible.requests.post")
+    @mock.patch("ai.services.providers.groq.requests.post")
     def test_non_json_response_raises_invalid(self, mock_post):
         response = mock.Mock(status_code=200)
         response.json.side_effect = ValueError("not json")
@@ -268,23 +241,23 @@ class OpenAICompatibleProviderTests(SimpleTestCase):
         with self.assertRaises(LLMInvalidResponseError):
             self.provider.chat(self.request)
 
-    @mock.patch("ai.services.providers.openai_compatible.requests.post")
+    @mock.patch("ai.services.providers.groq.requests.post")
     def test_empty_content_raises_invalid(self, mock_post):
-        mock_post.return_value = fake_openai_response(
-            {"model": "test-model", "choices": [{"message": {"content": "  "}}]}
+        mock_post.return_value = fake_groq_response(
+            {"model": "llama-3.3-70b-versatile", "choices": [{"message": {"content": "  "}}]}
         )
         with self.assertRaises(LLMInvalidResponseError):
             self.provider.chat(self.request)
 
-    @mock.patch("ai.services.providers.openai_compatible.requests.post")
+    @mock.patch("ai.services.providers.groq.requests.post")
     def test_sends_tools_schema_in_payload(self, mock_post):
         tool = ToolSpec(
             name="search_issues",
             description="Search issues.",
             parameters={"type": "object", "properties": {"q": {"type": "string"}}},
         )
-        mock_post.return_value = fake_openai_response(
-            {"model": "test-model", "choices": [{"message": {"content": "ok"}}]}
+        mock_post.return_value = fake_groq_response(
+            {"model": "llama-3.3-70b-versatile", "choices": [{"message": {"content": "ok"}}]}
         )
         self.provider.chat(
             ChatRequest(
@@ -296,11 +269,11 @@ class OpenAICompatibleProviderTests(SimpleTestCase):
         self.assertEqual(payload["tools"][0]["type"], "function")
         self.assertEqual(payload["tools"][0]["function"]["name"], "search_issues")
 
-    @mock.patch("ai.services.providers.openai_compatible.requests.post")
+    @mock.patch("ai.services.providers.groq.requests.post")
     def test_parses_tool_calls_from_response(self, mock_post):
-        mock_post.return_value = fake_openai_response(
+        mock_post.return_value = fake_groq_response(
             {
-                "model": "test-model",
+                "model": "llama-3.3-70b-versatile",
                 "choices": [
                     {
                         "message": {
@@ -328,11 +301,11 @@ class OpenAICompatibleProviderTests(SimpleTestCase):
         self.assertEqual(response.finish_reason, "tool_calls")
         self.assertEqual(response.content, "")
 
-    @mock.patch("ai.services.providers.openai_compatible.requests.post")
+    @mock.patch("ai.services.providers.groq.requests.post")
     def test_malformed_tool_arguments_preserved(self, mock_post):
-        mock_post.return_value = fake_openai_response(
+        mock_post.return_value = fake_groq_response(
             {
-                "model": "test-model",
+                "model": "llama-3.3-70b-versatile",
                 "choices": [
                     {
                         "message": {
@@ -352,16 +325,16 @@ class OpenAICompatibleProviderTests(SimpleTestCase):
         response = self.provider.chat(self.request)
         self.assertIn("_malformed", response.tool_calls[0].arguments)
 
-    @mock.patch("ai.services.providers.openai_compatible.requests.post")
+    @mock.patch("ai.services.providers.groq.requests.post")
     def test_empty_response_without_tool_calls_raises(self, mock_post):
-        mock_post.return_value = fake_openai_response(
-            {"model": "test-model", "choices": [{"message": {"content": None}}]}
+        mock_post.return_value = fake_groq_response(
+            {"model": "llama-3.3-70b-versatile", "choices": [{"message": {"content": None}}]}
         )
         with self.assertRaises(LLMInvalidResponseError):
             self.provider.chat(self.request)
 
     def test_unconfigured_provider_raises(self):
-        unconfigured = OpenAICompatibleProvider(ProviderConfig(name="openai", api_key=""))
+        unconfigured = GroqProvider(ProviderConfig(name="groq", api_key=""))
         self.assertFalse(unconfigured.is_configured())
         with self.assertRaises(LLMConfigurationError):
             unconfigured.chat(self.request)
@@ -525,21 +498,24 @@ class SettingsWiringTests(SimpleTestCase):
         service_module._ai_service = None
 
     @override_settings(
-        AI_PROVIDER="openai",
-        AI_OPENAI_API_KEY="env-test-key",
-        AI_OPENAI_MODEL="env-test-model",
-        AI_OPENAI_BASE_URL="https://env.example.test/v1",
-        AI_OPENAI_TIMEOUT=30,
-        AI_OPENAI_MAX_TOKENS=200,
-        AI_OPENAI_TEMPERATURE=0.5,
+        AI_PROVIDER="groq",
+        AI_PROVIDERS="groq",
+        AI_GROQ_API_KEY="env-test-key",
+        AI_GROQ_MODEL="env-test-model",
+        AI_GROQ_BASE_URL="https://api.groq.com/openai/v1",
+        AI_GROQ_TIMEOUT=30,
+        AI_GROQ_MAX_TOKENS=200,
+        AI_GROQ_TEMPERATURE=0.5,
     )
     def test_default_router_built_from_settings(self):
         service = service_module.get_ai_service()
         self.assertTrue(service.is_configured())
         provider = service.router.providers[0]
+        self.assertEqual(provider.name, "groq")
         self.assertEqual(provider.config.api_key, "env-test-key")
         self.assertEqual(provider.config.model, "env-test-model")
         self.assertEqual(provider.config.timeout, 30)
+        self.assertIn("api.groq.com", provider.config.base_url)
 
 
 class HealthViewTests(SimpleTestCase):
@@ -557,8 +533,8 @@ class HealthViewTests(SimpleTestCase):
         service = AIService(
             LLMRouter(
                 [
-                    OpenAICompatibleProvider(
-                        ProviderConfig(name="openai", api_key="super-secret-key")
+                    GroqProvider(
+                        ProviderConfig(name="groq", api_key="super-secret-key")
                     )
                 ]
             )
@@ -578,39 +554,60 @@ class ProviderCredentialCheckTests(SimpleTestCase):
     ``runserver`` must say so.
     """
 
+    def setUp(self):
+        # Provide a real (temp) .env with the key unset so the check only
+        # reports the credential warning and not "file missing" (ai.W004).
+        import tempfile
+        from pathlib import Path
+
+        from ai import env_diagnostics
+
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        env_file = Path(tmp.name) / ".env"
+        env_file.write_text("AI_GROQ_API_KEY=\n", encoding="utf-8")
+        patcher = mock.patch.object(
+            env_diagnostics, "find_env_file", return_value=str(env_file)
+        )
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.addCleanup(env_diagnostics._raw_file_values.cache_clear)
+        self.addCleanup(env_diagnostics._raw_entries.cache_clear)
+
     def test_warns_when_no_provider_has_credentials(self):
         with override_settings(
-            AI_PROVIDERS="openai,groq",
-            AI_OPENAI_API_KEY="",
+            AI_PROVIDERS="groq",
             AI_GROQ_API_KEY="",
         ):
             warnings = ai_provider_credentials(None)
 
         self.assertEqual(len(warnings), 1)
         self.assertEqual(warnings[0].id, "ai.W001")
-        # The hint has to name settings the developer can actually set.
-        self.assertIn("AI_OPENAI_API_KEY", warnings[0].hint)
         self.assertIn("AI_GROQ_API_KEY", warnings[0].hint)
+        self.assertNotIn("AI_OPENAI_API_KEY", warnings[0].hint)
+        self.assertNotIn("AI_ANTHROPIC_API_KEY", warnings[0].hint)
+        self.assertNotIn("AI_GEMINI_API_KEY", warnings[0].hint)
         self.assertIn("manage.py ai_test", warnings[0].hint)
 
-    def test_silent_when_a_provider_has_credentials(self):
+    def test_silent_when_groq_has_credentials(self):
         with override_settings(
-            AI_PROVIDERS="openai,groq",
-            AI_OPENAI_API_KEY="sk-configured",
-            AI_GROQ_API_KEY="",
+            AI_PROVIDERS="groq",
+            AI_GROQ_API_KEY="gsk-configured",
         ):
             self.assertEqual(ai_provider_credentials(None), [])
 
-    def test_silent_when_only_a_lower_priority_provider_is_configured(self):
+    def test_removed_vendors_in_env_do_not_silence_the_warning(self):
         with override_settings(
             AI_PROVIDERS="openai,anthropic",
-            AI_OPENAI_API_KEY="",
-            AI_ANTHROPIC_API_KEY="sk-ant-configured",
+            AI_GROQ_API_KEY="",
         ):
-            self.assertEqual(ai_provider_credentials(None), [])
-
-    def test_unknown_provider_names_do_not_crash_the_check(self):
-        with override_settings(AI_PROVIDERS="not_a_provider", AI_OPENAI_API_KEY=""):
             warnings = ai_provider_credentials(None)
         self.assertEqual(len(warnings), 1)
         self.assertEqual(warnings[0].id, "ai.W001")
+
+    def test_unknown_provider_names_do_not_crash_the_check(self):
+        with override_settings(AI_PROVIDERS="not_a_provider", AI_GROQ_API_KEY=""):
+            warnings = ai_provider_credentials(None)
+        self.assertEqual(len(warnings), 1)
+        self.assertEqual(warnings[0].id, "ai.W001")
+

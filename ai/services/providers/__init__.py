@@ -1,36 +1,24 @@
-"""Provider registry: maps a settings name to an LLMProvider class + defaults.
+"""Provider registry: ContribKit talks to Groq only.
 
-Adding a provider later is a one-line registration (plus its class) here —
-nothing else in the application changes. The `openai_compatible` alias lets
-the same class serve any OpenAI-compatible endpoint with different defaults.
-
-Current providers:
-    - ``openai``          OpenAI Chat Completions (native).
-    - ``openai_compatible`` Any OpenAI-compatible endpoint (explicit alias).
-    - ``groq``            Groq (https://api.groq.com/openai/v1) — OpenAI-compatible
-                          API hosting open models (e.g. llama-3.3-70b-versatile).
-    - ``anthropic``       Claude via the native Anthropic Messages API
-                          (tool calling supported).
+The rest of the application resolves the provider through this module so
+views, the router, and settings never hard-code Groq's class. Unknown
+names (openai, gemini, anthropic, grok, …) raise ``LLMConfigurationError``.
 """
 
 from ..exceptions import LLMConfigurationError
-from .anthropic import AnthropicProvider
 from .base import LLMProvider
-from .openai_compatible import OpenAICompatibleProvider
+from .groq import GroqProvider
 
 PROVIDER_REGISTRY = {
-    "openai": OpenAICompatibleProvider,
-    "openai_compatible": OpenAICompatibleProvider,
-    "groq": OpenAICompatibleProvider,
-    "anthropic": AnthropicProvider,
+    "groq": GroqProvider,
 }
 
 # Vendor defaults; everything is overridable through env/settings.
 PROVIDER_DEFAULTS = {
-    "openai": {"base_url": "https://api.openai.com/v1", "model": "gpt-4o-mini"},
-    "openai_compatible": {"base_url": "https://api.openai.com/v1", "model": "gpt-4o-mini"},
-    "groq": {"base_url": "https://api.groq.com/openai/v1", "model": "llama-3.3-70b-versatile"},
-    "anthropic": {"base_url": "https://api.anthropic.com/v1", "model": "claude-sonnet-4-5-20250929"},
+    "groq": {
+        "base_url": "https://api.groq.com/openai/v1",
+        "model": "llama-3.3-70b-versatile",
+    },
 }
 
 
@@ -56,8 +44,7 @@ def available_providers() -> tuple[str, ...]:
 
 __all__ = [
     "LLMProvider",
-    "OpenAICompatibleProvider",
-    "AnthropicProvider",
+    "GroqProvider",
     "PROVIDER_REGISTRY",
     "PROVIDER_DEFAULTS",
     "get_provider_class",
