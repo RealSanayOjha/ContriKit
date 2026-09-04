@@ -75,33 +75,29 @@
 ## AI Contribution Assistant (LLM setup)
 
 The floating assistant (`templates/ai/widget.html` + `static/js/ai_chat.js`) talks
-to **your own server only**, via `POST /ai/chat/`. The server then calls the LLM
-provider — API keys live in `.env` and never reach the browser.
+to **your own server only**, via `POST /ai/chat/`. The server then calls **Groq**
+— `AI_GROQ_API_KEY` lives in `.env` and never reaches the browser. Groq is the
+only LLM backend; OpenAI, Gemini, and Anthropic are not used.
 
-**With no API key the assistant cannot work, and it fails quietly:** `/ai/chat/`
+**With no Groq key the assistant cannot work, and it fails quietly:** `/ai/chat/`
 answers `503 {"code": "ai_unavailable"}` and the router short-circuits *before*
-making any outbound call, so nothing is ever sent to OpenAI/Groq/Gemini/Claude
-and the provider dashboard shows no request. `manage.py check` / `runserver`
-print the `ai.W001` warning at startup so this is visible immediately.
+making any outbound call, so nothing is ever sent to Groq and the Groq dashboard
+shows no request. `manage.py check` / `runserver` print the `ai.W001` warning at
+startup so this is visible immediately.
 
-### 1. Put at least one key in `.env`
+### 1. Put your Groq key in `.env`
 
 ```dotenv
-AI_PROVIDERS=groq,openai,anthropic,gemini   # priority order; first provider with a key wins
+AI_PROVIDERS=groq
 AI_GROQ_API_KEY=gsk-...          # Groq (api.groq.com, Llama models)
-# AI_OPENAI_API_KEY=sk-...
-# AI_GEMINI_API_KEY=...
-# AI_ANTHROPIC_API_KEY=sk-ant-...
+AI_GROQ_MODEL=llama-3.3-70b-versatile
 ```
-
-Any other OpenAI-compatible gateway still works: point `AI_OPENAI_BASE_URL` at it
-(OpenRouter, an Azure-style gateway, or a local Ollama / LM Studio).
 
 ### 2. Verify the credentials before debugging the UI
 
 ```bash
-python manage.py ai_test                          # one real provider call, no DB/UI needed
-python manage.py ai_test "Explain git rebase" --model gpt-4o-mini
+python manage.py ai_test                          # one real Groq call, no DB/UI needed
+python manage.py ai_test "Explain git rebase" --model llama-3.3-70b-versatile
 curl http://127.0.0.1:8000/ai/health/             # provider status; no secrets, no API call
 ```
 
@@ -109,9 +105,9 @@ curl http://127.0.0.1:8000/ai/health/             # provider status; no secrets,
 
 | Symptom | Cause |
 | --- | --- |
-| `ai.W001` warning at startup; chat replies "The AI assistant is not configured yet." | No API key in `.env` — see step 1. No LLM request is made in this state. |
-| Chat replies "temporarily unavailable"; server log says the provider rejected the API key | Key is wrong or revoked (provider answered 401/403). The log names the exact `AI_*_API_KEY` setting to fix. |
-| "The AI provider is busy" | Provider rate limit (429); the router retries, then falls back to the next provider in `AI_PROVIDERS`. |
+| `ai.W001` warning at startup; chat replies "The AI assistant is not configured yet." | No `AI_GROQ_API_KEY` in `.env` — see step 1. No Groq request is made in this state. |
+| Chat replies "temporarily unavailable"; server log says Groq rejected the API key | Key is wrong or revoked (Groq answered 401/403). The log names `AI_GROQ_API_KEY`. |
+| "The AI provider is busy" | Groq rate limit (429); the router retries with backoff. |
 | Widget shows "I could not read your security token" | The page has no CSRF token — reload once. `base.html` publishes it as `<meta name="csrf-token">`. |
 | Nothing at all happens and DevTools shows no `/ai/chat/` request | A JavaScript error before the request; check DevTools → Console. |
 

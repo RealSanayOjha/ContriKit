@@ -1,4 +1,4 @@
-"""Shared, provider-agnostic data types for the AI service layer."""
+"""Shared data types for the AI service layer."""
 
 from __future__ import annotations
 
@@ -8,8 +8,8 @@ from typing import Any, Optional
 # Roles accepted by chat completion APIs.
 VALID_ROLES = ("system", "user", "assistant", "tool")
 
-OPENAI_COMPATIBLE_DEFAULT_BASE_URL = "https://api.openai.com/v1"
-OPENAI_COMPATIBLE_DEFAULT_MODEL = "gpt-4o-mini"
+GROQ_DEFAULT_BASE_URL = "https://api.groq.com/openai/v1"
+GROQ_DEFAULT_MODEL = "llama-3.3-70b-versatile"
 
 
 @dataclass(frozen=True)
@@ -93,20 +93,15 @@ class ChatResponse:
 
 @dataclass
 class ProviderConfig:
-    """Configuration for a single LLM provider instance (built from env vars).
+    """Configuration for a single LLM provider instance (built from env vars)."""
 
-    Fields marked "reserved" are read by the upcoming multi-provider router
-    (priorities, rate limits, fallback) but are not used in this iteration.
-    """
-
-    name: str = "openai"
+    name: str = "groq"
     api_key: str = ""
-    base_url: str = OPENAI_COMPATIBLE_DEFAULT_BASE_URL
-    model: str = OPENAI_COMPATIBLE_DEFAULT_MODEL
+    base_url: str = GROQ_DEFAULT_BASE_URL
+    model: str = GROQ_DEFAULT_MODEL
     timeout: int = 60
     max_tokens: int = 1024
     temperature: float = 0.7
     enabled: bool = True
-    # Reserved for multi-provider routing (later step).
     priority: int = 100
     rate_limit_per_minute: Optional[int] = None
