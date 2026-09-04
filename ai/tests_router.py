@@ -83,21 +83,32 @@ def fake_anthropic_response(data, status_code=200):
 class ProviderRegistryTests(SimpleTestCase):
     def test_all_providers_registered(self):
         self.assertIn("openai", PROVIDER_REGISTRY)
-        self.assertIn("grok", PROVIDER_REGISTRY)
-        self.assertIn("xai", PROVIDER_REGISTRY)
+        self.assertIn("groq", PROVIDER_REGISTRY)
         self.assertIn("gemini", PROVIDER_REGISTRY)
         self.assertIn("anthropic", PROVIDER_REGISTRY)
 
-    def test_grok_uses_openai_compatible_class(self):
-        self.assertIs(get_provider_class("grok"), OpenAICompatibleProvider)
+    def test_removed_grok_and_xai_names_are_unknown(self):
+        # xAI Grok support was removed; the project uses Groq only. The old
+        # names must resolve to a clear configuration error, never a provider.
+        with self.assertRaises(LLMConfigurationError):
+            get_provider_class("grok")
+        with self.assertRaises(LLMConfigurationError):
+            get_provider_class("xai")
+        self.assertNotIn("grok", PROVIDER_REGISTRY)
+        self.assertNotIn("xai", PROVIDER_REGISTRY)
+
+    def test_groq_uses_openai_compatible_class(self):
+        # Groq speaks the OpenAI-compatible wire protocol (own endpoint/key).
+        self.assertIs(get_provider_class("groq"), OpenAICompatibleProvider)
 
     def test_anthropic_uses_native_class(self):
         self.assertIs(get_provider_class("anthropic"), AnthropicProvider)
 
     def test_vendor_defaults_present(self):
-        defaults = get_provider_defaults("grok")
-        self.assertIn("https://api.x.ai", defaults["base_url"])
+        defaults = get_provider_defaults("groq")
+        self.assertIn("https://api.groq.com", defaults["base_url"])
         self.assertNotIn("https://api.openai.com", defaults["base_url"])
+        self.assertIn("llama", defaults["model"])
         self.assertIn("claude", get_provider_defaults("anthropic")["model"])
 
     def test_available_providers_sorted(self):
@@ -366,18 +377,18 @@ class SettingsMultiProviderTests(SimpleTestCase):
         service_module._ai_service = None
 
     @override_settings(
-        AI_PROVIDERS="openai, anthropic, grok",
+        AI_PROVIDERS="openai, anthropic, groq",
         AI_OPENAI_API_KEY="sk-openai",
         AI_ANTHROPIC_API_KEY="sk-ant",
-        AI_GROK_API_KEY="xai-key",
+        AI_GROQ_API_KEY="gsk-test",
         AI_OPENAI_PRIORITY=5,
         AI_ANTHROPIC_PRIORITY=1,  # anthropic should win despite list order
-        AI_GROK_MODEL="grok-custom",
+        AI_GROQ_MODEL="llama-custom",
     )
     def test_builds_multiple_providers_with_priority(self):
         router = service_module.build_default_router()
         names = [p.name for p in router.providers]
-        self.assertEqual(names, ["openai", "anthropic", "grok"])
+        self.assertEqual(names, ["openai", "anthropic", "groq"])
         self.assertTrue(router.fallback)
         self.assertEqual(router.retries, 2)
 
@@ -385,16 +396,41 @@ class SettingsMultiProviderTests(SimpleTestCase):
         self.assertEqual(ordered[0].name, "anthropic")  # priority 1
         self.assertEqual(ordered[0].config.api_key, "sk-ant")
         self.assertEqual(ordered[1].name, "openai")
-        self.assertEqual(ordered[2].name, "grok")
-        grok = ordered[2]
-        self.assertEqual(grok.config.model, "grok-custom")
-        self.assertIn("api.x.ai", grok.config.base_url)
+        self.assertEqual(ordered[2].name, "groq")
+        groq = ordered[2]
+        self.assertEqual(groq.config.api_key, "gsk-test")
+        self.assertEqual(groq.config.model, "llama-custom")
+        self.assertIn("api.groq.com", groq.config.base_url)
 
-    @override_settings(AI_PROVIDERS="", AI_PROVIDER="grok", AI_GROK_API_KEY="key")
+    @override_settings(AI_PROVIDERS="", AI_PROVIDER="groq", AI_GROQ_API_KEY="key")
     def test_legacy_single_provider_still_works(self):
         router = service_module.build_default_router()
-        self.assertEqual([p.name for p in router.providers], ["grok"])
+        self.assertEqual([p.name for p in router.providers], ["groq"])
         self.assertTrue(router.providers[0].is_configured())
+
+    @override_settings(
+        AI_PROVIDERS="groq,grok",
+        AI_GROQ_API_KEY="gsk-test",
+    )
+    def test_removed_grok_name_is_skipped_without_breaking_groq(self):
+        # Old .env files may still list "grok" in AI_PROVIDERS. The unknown
+        # name must be skipped with a warning while groq keeps working.
+        router = service_module.build_default_router()
+        self.assertEqual([p.name for p in router.providers], ["groq"])
+        self.assertTrue(router.providers[0].is_configured())
+
+    @override_settings(
+        AI_PROVIDERS="groq",
+        AI_GROQ_API_KEY="gsk-test",
+    )
+    def test_groq_only_configures_router(self):
+        router = service_module.build_default_router()
+        self.assertEqual([p.name for p in router.providers], ["groq"])
+        self.assertTrue(router.providers[0].is_configured())
+        self.assertIn("api.groq.com", router.providers[0].config.base_url)
+        health = router.health()[0]
+        self.assertEqual(health["provider"], "groq")
+        self.assertEqual(health["status"], "healthy")
 
     @override_settings(
         AI_PROVIDERS="openai,annotated_provider",

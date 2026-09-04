@@ -197,6 +197,58 @@ class OpenAICompatibleProviderTests(SimpleTestCase):
             self.provider.chat(self.request)
 
     @mock.patch("ai.services.providers.openai_compatible.requests.post")
+    def test_auth_error_names_correct_key_per_provider(self, mock_post):
+        # A Groq 401 must say AI_GROQ_API_KEY (not AI_OPENAI_API_KEY),
+        # otherwise a bad key is undebuggable from the logs.
+        from ai.services.providers.openai_compatible import _key_hint_for
+
+        self.assertEqual(_key_hint_for("groq"), "AI_GROQ_API_KEY")
+        self.assertEqual(_key_hint_for("openai"), "AI_OPENAI_API_KEY")
+        self.assertEqual(_key_hint_for("gemini"), "AI_GEMINI_API_KEY")
+
+        groq_provider = OpenAICompatibleProvider(
+            ProviderConfig(
+                name="groq",
+                api_key="gsk-test",
+                base_url="https://api.groq.com/openai/v1",
+                model="llama-3.3-70b-versatile",
+            )
+        )
+        mock_post.return_value = fake_openai_response({}, status_code=401)
+        with self.assertRaises(LLMAuthenticationError) as ctx:
+            groq_provider.chat(self.request)
+        self.assertIn("AI_GROQ_API_KEY", str(ctx.exception))
+        self.assertIn("groq", str(ctx.exception))
+
+    @mock.patch("ai.services.providers.openai_compatible.requests.post")
+    def test_groq_posts_to_groq_endpoint_with_bearer_key(self, mock_post):
+        # The Groq provider must call api.groq.com with the Groq key as a
+        # Bearer token and a Llama model name.
+        groq_provider = OpenAICompatibleProvider(
+            ProviderConfig(
+                name="groq",
+                api_key="gsk-test",
+                base_url="https://api.groq.com/openai/v1",
+                model="llama-3.3-70b-versatile",
+            )
+        )
+        mock_post.return_value = fake_openai_response(
+            {
+                "model": "llama-3.3-70b-versatile",
+                "choices": [{"message": {"content": "Hello from Groq!"}}],
+            }
+        )
+        response = groq_provider.chat(self.request)
+        called_url = mock_post.call_args.args[0]
+        self.assertIn("api.groq.com", called_url)
+        headers = mock_post.call_args.kwargs["headers"]
+        self.assertEqual(headers["Authorization"], "Bearer gsk-test")
+        payload = mock_post.call_args.kwargs["json"]
+        self.assertEqual(payload["model"], "llama-3.3-70b-versatile")
+        self.assertEqual(response.content, "Hello from Groq!")
+        self.assertEqual(response.provider, "groq")
+
+    @mock.patch("ai.services.providers.openai_compatible.requests.post")
     def test_rate_limit_maps_429(self, mock_post):
         mock_post.return_value = fake_openai_response({}, status_code=429)
         with self.assertRaises(LLMRateLimitError):
@@ -529,9 +581,9 @@ class ProviderCredentialCheckTests(SimpleTestCase):
 
     def test_warns_when_no_provider_has_credentials(self):
         with override_settings(
-            AI_PROVIDERS="openai,grok",
+            AI_PROVIDERS="openai,groq",
             AI_OPENAI_API_KEY="",
-            AI_GROK_API_KEY="",
+            AI_GROQ_API_KEY="",
         ):
             warnings = ai_provider_credentials(None)
 
@@ -539,14 +591,14 @@ class ProviderCredentialCheckTests(SimpleTestCase):
         self.assertEqual(warnings[0].id, "ai.W001")
         # The hint has to name settings the developer can actually set.
         self.assertIn("AI_OPENAI_API_KEY", warnings[0].hint)
-        self.assertIn("AI_GROK_API_KEY", warnings[0].hint)
+        self.assertIn("AI_GROQ_API_KEY", warnings[0].hint)
         self.assertIn("manage.py ai_test", warnings[0].hint)
 
     def test_silent_when_a_provider_has_credentials(self):
         with override_settings(
-            AI_PROVIDERS="openai,grok",
+            AI_PROVIDERS="openai,groq",
             AI_OPENAI_API_KEY="sk-configured",
-            AI_GROK_API_KEY="",
+            AI_GROQ_API_KEY="",
         ):
             self.assertEqual(ai_provider_credentials(None), [])
 

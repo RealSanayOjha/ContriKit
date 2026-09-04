@@ -1,10 +1,13 @@
 """OpenAI-compatible Chat Completions provider.
 
 Talks to any endpoint implementing `POST {base_url}/chat/completions` with a
-Bearer token (OpenAI, Azure OpenAI-style gateways, Groq, OpenRouter, local
-Ollama/LM Studio, etc.). Using plain `requests` keeps the provider dependency
-free: `requests` is already a project dependency (used for GitHub API), so no
-new package is required and the code stays portable to PythonAnywhere.
+Bearer token (OpenAI, Azure OpenAI-style gateways, OpenRouter, local
+Ollama/LM Studio, etc.). Named vendors with their own defaults — ``groq``
+(Groq, api.groq.com), ``gemini`` — all share
+this class; only the base URL / key / model differ. Using plain `requests`
+keeps the provider dependency free: `requests` is already a project
+dependency (used for GitHub API), so no new package is required and the code
+stays portable to PythonAnywhere.
 
 Supports the native `tools` (function calling) format used by OpenAI-compatible
 endpoints; tool *execution* happens in the service layer, never here.
@@ -29,6 +32,20 @@ from ..types import ChatRequest, ChatResponse, ToolCall, UsageStats
 from .base import LLMProvider
 
 logger = logging.getLogger(__name__)
+
+# Maps a provider name to the .env setting holding its API key, so auth-error
+# messages point at the key the developer actually needs to fix. Without this,
+# a Groq (or Gemini) 401 misleadingly said "Check AI_OPENAI_API_KEY".
+PROVIDER_KEY_HINTS = {
+    "openai": "AI_OPENAI_API_KEY",
+    "openai_compatible": "AI_OPENAI_API_KEY",
+    "groq": "AI_GROQ_API_KEY",
+    "gemini": "AI_GEMINI_API_KEY",
+}
+
+
+def _key_hint_for(provider_name: str) -> str:
+    return PROVIDER_KEY_HINTS.get(provider_name.strip().lower(), "AI_OPENAI_API_KEY")
 
 
 class OpenAICompatibleProvider(LLMProvider):
@@ -126,7 +143,7 @@ class OpenAICompatibleProvider(LLMProvider):
         if status in (401, 403):
             raise LLMAuthenticationError(
                 f"Provider '{provider}' rejected the API key (HTTP {status}). "
-                "Check AI_OPENAI_API_KEY.",
+                f"Check {_key_hint_for(provider)}.",
                 status_code=status,
                 provider=provider,
             )

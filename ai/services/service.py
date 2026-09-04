@@ -43,8 +43,7 @@ MAX_TOOL_ROUNDS = 4
 PROVIDER_KEY_SETTINGS = {
     "openai": "AI_OPENAI_API_KEY",
     "openai_compatible": "AI_OPENAI_API_KEY",
-    "grok": "AI_GROK_API_KEY",
-    "xai": "AI_GROK_API_KEY",
+    "groq": "AI_GROQ_API_KEY",
     "gemini": "AI_GEMINI_API_KEY",
     "anthropic": "AI_ANTHROPIC_API_KEY",
 }
@@ -52,8 +51,7 @@ PROVIDER_KEY_SETTINGS = {
 PROVIDER_DEFAULT_PRIORITY = {
     "openai": 10,
     "openai_compatible": 10,
-    "grok": 20,
-    "xai": 20,
+    "groq": 15,
     "gemini": 30,
     "anthropic": 40,
 }
@@ -212,7 +210,7 @@ def _provider_names() -> list[str]:
 
 
 def _provider_setting(name: str, suffix: str, default):
-    """Read AI_<NAME>_<SUFFIX> from settings, e.g. AI_GROK_API_KEY."""
+    """Read AI_<NAME>_<SUFFIX> from settings, e.g. AI_GROQ_API_KEY."""
     key = f"AI_{name.replace('-', '_').upper()}_{suffix}"
     value = getattr(settings, key, None)
     return default if value in (None, "") else value

@@ -80,22 +80,22 @@ provider — API keys live in `.env` and never reach the browser.
 
 **With no API key the assistant cannot work, and it fails quietly:** `/ai/chat/`
 answers `503 {"code": "ai_unavailable"}` and the router short-circuits *before*
-making any outbound call, so nothing is ever sent to OpenAI/Grok/Gemini/Claude
+making any outbound call, so nothing is ever sent to OpenAI/Groq/Gemini/Claude
 and the provider dashboard shows no request. `manage.py check` / `runserver`
 print the `ai.W001` warning at startup so this is visible immediately.
 
 ### 1. Put at least one key in `.env`
 
 ```dotenv
-AI_PROVIDERS=openai,grok,anthropic,gemini   # priority order; first provider with a key wins
-AI_OPENAI_API_KEY=sk-...
-# AI_GROK_API_KEY=xai-...
+AI_PROVIDERS=groq,openai,anthropic,gemini   # priority order; first provider with a key wins
+AI_GROQ_API_KEY=gsk-...          # Groq (api.groq.com, Llama models)
+# AI_OPENAI_API_KEY=sk-...
 # AI_GEMINI_API_KEY=...
 # AI_ANTHROPIC_API_KEY=sk-ant-...
 ```
 
-Any OpenAI-compatible gateway works: point `AI_OPENAI_BASE_URL` at it
-(OpenRouter, Groq, an Azure-style gateway, or a local Ollama / LM Studio).
+Any other OpenAI-compatible gateway still works: point `AI_OPENAI_BASE_URL` at it
+(OpenRouter, an Azure-style gateway, or a local Ollama / LM Studio).
 
 ### 2. Verify the credentials before debugging the UI
 
@@ -110,7 +110,7 @@ curl http://127.0.0.1:8000/ai/health/             # provider status; no secrets,
 | Symptom | Cause |
 | --- | --- |
 | `ai.W001` warning at startup; chat replies "The AI assistant is not configured yet." | No API key in `.env` — see step 1. No LLM request is made in this state. |
-| Chat replies "temporarily unavailable"; server log says the provider rejected the API key | Key is wrong or revoked (provider answered 401/403). |
+| Chat replies "temporarily unavailable"; server log says the provider rejected the API key | Key is wrong or revoked (provider answered 401/403). The log names the exact `AI_*_API_KEY` setting to fix. |
 | "The AI provider is busy" | Provider rate limit (429); the router retries, then falls back to the next provider in `AI_PROVIDERS`. |
 | Widget shows "I could not read your security token" | The page has no CSRF token — reload once. `base.html` publishes it as `<meta name="csrf-token">`. |
 | Nothing at all happens and DevTools shows no `/ai/chat/` request | A JavaScript error before the request; check DevTools → Console. |

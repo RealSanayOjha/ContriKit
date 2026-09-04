@@ -1,13 +1,14 @@
 """Provider registry: maps a settings name to an LLMProvider class + defaults.
 
 Adding a provider later is a one-line registration (plus its class) here —
-nothing else in the application changes. Aliases (`openai_compatible`, `xai`)
-let the same class serve multiple vendors with different default endpoints.
+nothing else in the application changes. The `openai_compatible` alias lets
+the same class serve any OpenAI-compatible endpoint with different defaults.
 
 Current providers:
     - ``openai``          OpenAI Chat Completions (native).
     - ``openai_compatible`` Any OpenAI-compatible endpoint (explicit alias).
-    - ``grok`` / ``xai``  xAI (Grok) — OpenAI-compatible Messages API.
+    - ``groq``            Groq (https://api.groq.com/openai/v1) — OpenAI-compatible
+                          API hosting open models (e.g. llama-3.3-70b-versatile).
     - ``gemini``          Google Gemini via its OpenAI-compatible endpoint.
     - ``anthropic``       Claude via the native Anthropic Messages API
                           (tool calling supported).
@@ -21,8 +22,7 @@ from .openai_compatible import OpenAICompatibleProvider
 PROVIDER_REGISTRY = {
     "openai": OpenAICompatibleProvider,
     "openai_compatible": OpenAICompatibleProvider,
-    "grok": OpenAICompatibleProvider,
-    "xai": OpenAICompatibleProvider,
+    "groq": OpenAICompatibleProvider,
     "gemini": OpenAICompatibleProvider,
     "anthropic": AnthropicProvider,
 }
@@ -31,8 +31,7 @@ PROVIDER_REGISTRY = {
 PROVIDER_DEFAULTS = {
     "openai": {"base_url": "https://api.openai.com/v1", "model": "gpt-4o-mini"},
     "openai_compatible": {"base_url": "https://api.openai.com/v1", "model": "gpt-4o-mini"},
-    "grok": {"base_url": "https://api.x.ai/v1", "model": "grok-3-mini"},
-    "xai": {"base_url": "https://api.x.ai/v1", "model": "grok-3-mini"},
+    "groq": {"base_url": "https://api.groq.com/openai/v1", "model": "llama-3.3-70b-versatile"},
     "gemini": {
         "base_url": "https://generativelanguage.googleapis.com/v1beta/openai",
         "model": "gemini-2.0-flash",

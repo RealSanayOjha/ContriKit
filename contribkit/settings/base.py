@@ -214,7 +214,7 @@ SOCIAL_AUTH_PIPELINE = (
 # fallback, rate limiting, and queueing are added in later steps.
 # ---------------------------------------------------------------------------
 # Provider list, in priority order (first key with credentials wins, then
-# fallback). Accepts any of: openai, openai_compatible, grok, xai, gemini,
+# fallback). Accepts any of: openai, openai_compatible, groq, gemini,
 # anthropic. Backward compatible: falls back to AI_PROVIDER when unset.
 AI_PROVIDERS = config('AI_PROVIDERS', default='')
 AI_PROVIDER = config('AI_PROVIDER', default='openai')
@@ -237,15 +237,18 @@ AI_OPENAI_TEMPERATURE = config('AI_OPENAI_TEMPERATURE', default=0.7, cast=float)
 AI_OPENAI_PRIORITY = config('AI_OPENAI_PRIORITY', default=10, cast=int)
 AI_OPENAI_RATE_LIMIT = config('AI_OPENAI_RATE_LIMIT', default=0, cast=int)
 
-# ── xAI Grok (OpenAI-compatible API) ──────────────────────────────────────
-AI_GROK_API_KEY = config('AI_GROK_API_KEY', default='')
-AI_GROK_BASE_URL = config('AI_GROK_BASE_URL', default='https://api.x.ai/v1')
-AI_GROK_MODEL = config('AI_GROK_MODEL', default='grok-3-mini')
-AI_GROK_TIMEOUT = config('AI_GROK_TIMEOUT', default=60, cast=int)
-AI_GROK_MAX_TOKENS = config('AI_GROK_MAX_TOKENS', default=1024, cast=int)
-AI_GROK_TEMPERATURE = config('AI_GROK_TEMPERATURE', default=0.7, cast=float)
-AI_GROK_PRIORITY = config('AI_GROK_PRIORITY', default=20, cast=int)
-AI_GROK_RATE_LIMIT = config('AI_GROK_RATE_LIMIT', default=0, cast=int)
+# ── Groq (OpenAI-compatible API) ──────────────────────────────────────────
+# Groq hosts open models (Llama, Qwen, ...) at api.groq.com. Keys start with
+# gsk_ and the default model is llama-3.3-70b-versatile.
+AI_GROQ_API_KEY = config('AI_GROQ_API_KEY', default='')
+AI_GROQ_BASE_URL = config('AI_GROQ_BASE_URL', default='https://api.groq.com/openai/v1')
+AI_GROQ_MODEL = config('AI_GROQ_MODEL', default='llama-3.3-70b-versatile')
+AI_GROQ_TIMEOUT = config('AI_GROQ_TIMEOUT', default=60, cast=int)
+AI_GROQ_MAX_TOKENS = config('AI_GROQ_MAX_TOKENS', default=1024, cast=int)
+AI_GROQ_TEMPERATURE = config('AI_GROQ_TEMPERATURE', default=0.7, cast=float)
+AI_GROQ_PRIORITY = config('AI_GROQ_PRIORITY', default=15, cast=int)
+AI_GROQ_RATE_LIMIT = config('AI_GROQ_RATE_LIMIT', default=0, cast=int)
+
 
 # ── Google Gemini (OpenAI-compatible endpoint) ────────────────────────────
 AI_GEMINI_API_KEY = config('AI_GEMINI_API_KEY', default='')

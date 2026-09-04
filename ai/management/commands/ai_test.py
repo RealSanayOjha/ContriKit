@@ -53,7 +53,9 @@ class Command(BaseCommand):
         if not service.is_configured():
             raise CommandError(
                 "AI is not configured: no LLM provider has credentials. "
-                "Set AI_OPENAI_API_KEY in your environment / .env file first."
+                "Set at least one provider key in your environment / .env file first "
+                "(e.g. AI_GROQ_API_KEY for Groq, AI_OPENAI_API_KEY for OpenAI, "
+                "AI_GEMINI_API_KEY, AI_ANTHROPIC_API_KEY)."
             )
 
         message = options["message"] or DEFAULT_TEST_MESSAGE
