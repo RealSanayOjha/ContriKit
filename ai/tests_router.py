@@ -83,6 +83,7 @@ def fake_anthropic_response(data, status_code=200):
 class ProviderRegistryTests(SimpleTestCase):
     def test_all_providers_registered(self):
         self.assertIn("openai", PROVIDER_REGISTRY)
+        self.assertIn("groq", PROVIDER_REGISTRY)
         self.assertIn("grok", PROVIDER_REGISTRY)
         self.assertIn("xai", PROVIDER_REGISTRY)
         self.assertIn("gemini", PROVIDER_REGISTRY)
@@ -90,6 +91,11 @@ class ProviderRegistryTests(SimpleTestCase):
 
     def test_grok_uses_openai_compatible_class(self):
         self.assertIs(get_provider_class("grok"), OpenAICompatibleProvider)
+
+    def test_groq_uses_openai_compatible_class(self):
+        # Groq is a separate vendor from xAI Grok but shares the
+        # OpenAI-compatible wire protocol (different endpoint/key/model).
+        self.assertIs(get_provider_class("groq"), OpenAICompatibleProvider)
 
     def test_anthropic_uses_native_class(self):
         self.assertIs(get_provider_class("anthropic"), AnthropicProvider)
@@ -99,6 +105,16 @@ class ProviderRegistryTests(SimpleTestCase):
         self.assertIn("https://api.x.ai", defaults["base_url"])
         self.assertNotIn("https://api.openai.com", defaults["base_url"])
         self.assertIn("claude", get_provider_defaults("anthropic")["model"])
+
+    def test_groq_defaults_point_at_groq_not_xai(self):
+        # Regression: a Groq key must never be sent to api.x.ai. The groq
+        # defaults must resolve to Groq's endpoint/model, distinct from grok.
+        groq_defaults = get_provider_defaults("groq")
+        grok_defaults = get_provider_defaults("grok")
+        self.assertIn("https://api.groq.com/openai/v1", groq_defaults["base_url"])
+        self.assertNotIn("api.x.ai", groq_defaults["base_url"])
+        self.assertNotEqual(groq_defaults["base_url"], grok_defaults["base_url"])
+        self.assertNotEqual(groq_defaults["model"], grok_defaults["model"])
 
     def test_available_providers_sorted(self):
         names = available_providers()
@@ -395,6 +411,64 @@ class SettingsMultiProviderTests(SimpleTestCase):
         router = service_module.build_default_router()
         self.assertEqual([p.name for p in router.providers], ["grok"])
         self.assertTrue(router.providers[0].is_configured())
+
+    @override_settings(
+        AI_PROVIDERS="groq,grok",
+        AI_GROQ_API_KEY="gsk-test",
+        AI_GROK_API_KEY="xai-test",
+        AI_GROQ_MODEL="llama-3.3-70b-versatile",
+        AI_GROK_MODEL="grok-3-mini",
+    )
+    def test_groq_and_grok_use_distinct_keys_endpoints_and_models(self):
+        # Regression for the Groq-vs-Grok mix-up: each vendor must read its
+        # own key setting and keep its own endpoint/model. A gsk_ key in the
+        # grok slot (or vice versa) always 401s, so they must never be shared.
+        from ai.services.service import PROVIDER_KEY_SETTINGS
+
+        self.assertEqual(PROVIDER_KEY_SETTINGS["groq"], "AI_GROQ_API_KEY")
+        self.assertEqual(PROVIDER_KEY_SETTINGS["grok"], "AI_GROK_API_KEY")
+        self.assertNotEqual(
+            PROVIDER_KEY_SETTINGS["groq"], PROVIDER_KEY_SETTINGS["grok"]
+        )
+
+        router = service_module.build_default_router()
+        by_name = {p.name: p for p in router.providers}
+        self.assertIn("groq", by_name)
+        self.assertIn("grok", by_name)
+        groq, grok = by_name["groq"], by_name["grok"]
+        self.assertEqual(groq.config.api_key, "gsk-test")
+        self.assertEqual(grok.config.api_key, "xai-test")
+        self.assertIn("api.groq.com", groq.config.base_url)
+        self.assertIn("api.x.ai", grok.config.base_url)
+        self.assertNotEqual(groq.config.base_url, grok.config.base_url)
+
+    @override_settings(
+        AI_PROVIDERS="groq",
+        AI_GROQ_API_KEY="gsk-test",
+    )
+    def test_groq_only_configures_router(self):
+        router = service_module.build_default_router()
+        self.assertEqual([p.name for p in router.providers], ["groq"])
+        self.assertTrue(router.providers[0].is_configured())
+        self.assertIn("api.groq.com", router.providers[0].config.base_url)
+        health = router.health()[0]
+        self.assertEqual(health["provider"], "groq")
+        self.assertEqual(health["status"], "healthy")
+
+    @override_settings(
+        AI_PROVIDERS="groq,grok",
+        AI_GROQ_API_KEY="",
+        AI_GROK_API_KEY="gsk-wrong-slot",
+    )
+    def test_groq_key_in_grok_slot_does_not_configure_groq(self):
+        # Documents the original bug: a Groq gsk_ key placed in AI_GROK_API_KEY
+        # leaves the groq provider unconfigured and points the grok provider
+        # at api.x.ai, where that key can never authenticate.
+        router = service_module.build_default_router()
+        by_name = {p.name: p for p in router.providers}
+        self.assertFalse(by_name["groq"].is_configured())
+        self.assertTrue(by_name["grok"].is_configured())
+        self.assertIn("api.x.ai", by_name["grok"].config.base_url)
 
     @override_settings(
         AI_PROVIDERS="openai,annotated_provider",

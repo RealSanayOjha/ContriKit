@@ -40,9 +40,14 @@ _ai_service: "AIService | None" = None
 MAX_TOOL_ROUNDS = 4
 
 # Settings key used for each provider's API key; aliases share a key source.
+# NOTE: "groq" (Groq, api.groq.com, gsk_ keys, Llama models) and "grok"/"xai"
+# (xAI, api.x.ai, xai- keys, grok-* models) are DIFFERENT vendors with
+# different keys, endpoints, and models. They must never share a key setting —
+# mixing them up sends a key to the wrong endpoint and always fails with 401.
 PROVIDER_KEY_SETTINGS = {
     "openai": "AI_OPENAI_API_KEY",
     "openai_compatible": "AI_OPENAI_API_KEY",
+    "groq": "AI_GROQ_API_KEY",
     "grok": "AI_GROK_API_KEY",
     "xai": "AI_GROK_API_KEY",
     "gemini": "AI_GEMINI_API_KEY",
@@ -52,6 +57,7 @@ PROVIDER_KEY_SETTINGS = {
 PROVIDER_DEFAULT_PRIORITY = {
     "openai": 10,
     "openai_compatible": 10,
+    "groq": 15,
     "grok": 20,
     "xai": 20,
     "gemini": 30,

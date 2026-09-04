@@ -31,7 +31,7 @@ def ai_provider_credentials(app_configs, **kwargs):
         return []
 
     key_names = sorted({_key_setting(name) for name in known}) or [
-        "AI_OPENAI_API_KEY", "AI_GROK_API_KEY", "AI_GEMINI_API_KEY", "AI_ANTHROPIC_API_KEY",
+        "AI_OPENAI_API_KEY", "AI_GROQ_API_KEY", "AI_GROK_API_KEY", "AI_GEMINI_API_KEY", "AI_ANTHROPIC_API_KEY",
     ]
     return [
         Warning(

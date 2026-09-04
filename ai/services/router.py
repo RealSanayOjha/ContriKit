@@ -144,8 +144,8 @@ class LLMRouter:
 
         raise LLMProviderUnavailableError(
             "No LLM provider is configured. Set at least one API key in your "
-            "environment (.env file), e.g. AI_OPENAI_API_KEY, AI_GROK_API_KEY "
-            "or AI_ANTHROPIC_API_KEY, and try again."
+            "environment (.env file), e.g. AI_OPENAI_API_KEY, AI_GROQ_API_KEY, "
+            "AI_GROK_API_KEY or AI_ANTHROPIC_API_KEY, and try again."
         )
 
     def health(self) -> list[dict]:

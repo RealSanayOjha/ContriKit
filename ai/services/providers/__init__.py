@@ -7,6 +7,9 @@ let the same class serve multiple vendors with different default endpoints.
 Current providers:
     - ``openai``          OpenAI Chat Completions (native).
     - ``openai_compatible`` Any OpenAI-compatible endpoint (explicit alias).
+    - ``groq``            Groq (https://api.groq.com/openai/v1) — OpenAI-compatible
+                          API hosting open models (e.g. llama-3.3-70b-versatile).
+                          NOTE: Groq is NOT Grok — see ``grok``/``xai`` below.
     - ``grok`` / ``xai``  xAI (Grok) — OpenAI-compatible Messages API.
     - ``gemini``          Google Gemini via its OpenAI-compatible endpoint.
     - ``anthropic``       Claude via the native Anthropic Messages API
@@ -21,6 +24,7 @@ from .openai_compatible import OpenAICompatibleProvider
 PROVIDER_REGISTRY = {
     "openai": OpenAICompatibleProvider,
     "openai_compatible": OpenAICompatibleProvider,
+    "groq": OpenAICompatibleProvider,
     "grok": OpenAICompatibleProvider,
     "xai": OpenAICompatibleProvider,
     "gemini": OpenAICompatibleProvider,
@@ -31,6 +35,7 @@ PROVIDER_REGISTRY = {
 PROVIDER_DEFAULTS = {
     "openai": {"base_url": "https://api.openai.com/v1", "model": "gpt-4o-mini"},
     "openai_compatible": {"base_url": "https://api.openai.com/v1", "model": "gpt-4o-mini"},
+    "groq": {"base_url": "https://api.groq.com/openai/v1", "model": "llama-3.3-70b-versatile"},
     "grok": {"base_url": "https://api.x.ai/v1", "model": "grok-3-mini"},
     "xai": {"base_url": "https://api.x.ai/v1", "model": "grok-3-mini"},
     "gemini": {
