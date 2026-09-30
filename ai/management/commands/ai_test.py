@@ -6,7 +6,7 @@ key before using the chat widget.
 
 Usage:
     python manage.py ai_test "What is a good first issue for a beginner?"
-    python manage.py ai_test "Explain how git rebase works" --model llama-3.3-70b-versatile
+    python manage.py ai_test "Explain how git rebase works" --model openai/gpt-oss-120b
 """
 
 from django.conf import settings
@@ -64,7 +64,7 @@ class Command(BaseCommand):
 
         # Show what the server actually loaded (never reveal the key itself).
         key = getattr(settings, "AI_GROQ_API_KEY", "") or ""
-        model = getattr(settings, "AI_GROQ_MODEL", "llama-3.3-70b-versatile")
+        model = getattr(settings, "AI_GROQ_MODEL", "openai/gpt-oss-120b")
         self.stdout.write(
             f"Groq key  : {'set (' + key[:4] + '…)' if key else 'MISSING — set AI_GROQ_API_KEY in .env (see .env.example)'}"
         )

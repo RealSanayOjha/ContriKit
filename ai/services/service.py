@@ -29,7 +29,13 @@ from .prompts import build_system_prompt
 from .providers import PROVIDER_REGISTRY, get_provider_class, get_provider_defaults
 from .router import LLMRouter
 from .tools import ToolContext, ToolRegistry, build_default_tool_registry
-from .types import ChatMessage, ChatRequest, ChatResponse, ProviderConfig
+from .types import (
+    GROQ_RETIRED_MODELS,
+    ChatMessage,
+    ChatRequest,
+    ChatResponse,
+    ProviderConfig,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -219,11 +225,20 @@ def _provider_config(name: str) -> ProviderConfig:
     key_setting = PROVIDER_KEY_SETTINGS.get(name, "")
     api_key = getattr(settings, key_setting, "") if key_setting else ""
     rate_limit = _provider_setting(name, "RATE_LIMIT", 0)
+    model = _provider_setting(name, "MODEL", defaults.get("model"))
+    if name == "groq" and model in GROQ_RETIRED_MODELS:
+        replacement = GROQ_RETIRED_MODELS[model]
+        logger.warning(
+            "Groq model %s is retired; using %s. Update AI_GROQ_MODEL.",
+            model,
+            replacement,
+        )
+        model = replacement
     return ProviderConfig(
         name=name,
         api_key=api_key,
         base_url=_provider_setting(name, "BASE_URL", defaults.get("base_url")),
-        model=_provider_setting(name, "MODEL", defaults.get("model")),
+        model=model,
         timeout=_provider_setting(name, "TIMEOUT", 60),
         max_tokens=_provider_setting(name, "MAX_TOKENS", 1024),
         temperature=_provider_setting(name, "TEMPERATURE", 0.7),

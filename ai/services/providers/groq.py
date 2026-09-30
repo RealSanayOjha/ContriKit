@@ -6,7 +6,7 @@ Talks to Groq's Chat Completions endpoint:
     Authorization: Bearer <AI_GROQ_API_KEY>
 
 Default endpoint is ``https://api.groq.com/openai/v1`` (Groq's documented
-Chat Completions URL) with ``llama-3.3-70b-versatile``. Using plain
+Chat Completions URL) with ``openai/gpt-oss-120b``. Using plain
 ``requests`` keeps the provider dependency-free: ``requests`` is already a
 project dependency (GitHub API), so no extra package is required and the
 code stays portable to PythonAnywhere.

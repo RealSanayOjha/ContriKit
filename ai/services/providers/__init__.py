@@ -6,6 +6,7 @@ names (openai, gemini, anthropic, grok, …) raise ``LLMConfigurationError``.
 """
 
 from ..exceptions import LLMConfigurationError
+from ..types import GROQ_DEFAULT_BASE_URL, GROQ_DEFAULT_MODEL
 from .base import LLMProvider
 from .groq import GroqProvider
 
@@ -16,8 +17,8 @@ PROVIDER_REGISTRY = {
 # Vendor defaults; everything is overridable through env/settings.
 PROVIDER_DEFAULTS = {
     "groq": {
-        "base_url": "https://api.groq.com/openai/v1",
-        "model": "llama-3.3-70b-versatile",
+        "base_url": GROQ_DEFAULT_BASE_URL,
+        "model": GROQ_DEFAULT_MODEL,
     },
 }
 

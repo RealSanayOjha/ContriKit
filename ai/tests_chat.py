@@ -16,6 +16,8 @@ from ai.services import (
     ChatResponse,
     LLMAuthenticationError,
     LLMConfigurationError,
+    LLMInvalidResponseError,
+    LLMProviderError,
     LLMProviderServerError,
     LLMProviderUnavailableError,
     LLMRateLimitError,
@@ -33,7 +35,7 @@ def fake_reply(message=None, **kwargs):
     return ChatResponse(
         content="Hello from the assistant!",
         provider="groq",
-        model="llama-3.3-70b-versatile",
+        model="openai/gpt-oss-120b",
         usage=UsageStats(prompt_tokens=5, completion_tokens=9, total_tokens=14),
     )
 
@@ -91,7 +93,7 @@ class ChatEndpointTestCase(TestCase):
         data = json.loads(response.content)
         self.assertEqual(data["reply"], "Hello from the assistant!")
         self.assertEqual(data["provider"], "groq")
-        self.assertEqual(data["model"], "llama-3.3-70b-versatile")
+        self.assertEqual(data["model"], "openai/gpt-oss-120b")
 
         kwargs = mock_chat.call_args.kwargs
         self.assertEqual(kwargs["user"].username, "chatter")
@@ -228,6 +230,29 @@ class ChatEndpointTestCase(TestCase):
         response = self.post_json({"message": "hi"})
         self.assertEqual(response.status_code, 504)
         self.assertEqual(json.loads(response.content)["code"], "ai_timeout")
+
+    @mock.patch(
+        "ai.views.ai_assistant_chat",
+        side_effect=LLMProviderError("model not found", status_code=404, provider="groq"),
+    )
+    def test_provider_client_error_maps_to_503(self, mock_chat):
+        self.client.force_login(self.user)
+        response = self.post_json({"message": "hi"})
+        data = json.loads(response.content)
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(data["code"], "provider_error")
+        self.assertNotIn("gsk_", data["error"])
+
+    @mock.patch(
+        "ai.views.ai_assistant_chat",
+        side_effect=LLMInvalidResponseError("empty content"),
+    )
+    def test_invalid_response_maps_to_503(self, mock_chat):
+        self.client.force_login(self.user)
+        response = self.post_json({"message": "hi"})
+        data = json.loads(response.content)
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(data["code"], "provider_error")
 
     @mock.patch("ai.views.ai_assistant_chat", side_effect=AIServiceError("boom"))
     def test_generic_failure_maps_to_500(self, mock_chat):
