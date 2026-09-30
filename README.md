@@ -89,15 +89,15 @@ startup so this is visible immediately.
 
 ```dotenv
 AI_PROVIDERS=groq
-AI_GROQ_API_KEY=gsk-...          # Groq (api.groq.com, Llama models)
-AI_GROQ_MODEL=llama-3.3-70b-versatile
+AI_GROQ_API_KEY=gsk-...          # Groq (api.groq.com)
+AI_GROQ_MODEL=openai/gpt-oss-120b
 ```
 
 ### 2. Verify the credentials before debugging the UI
 
 ```bash
 python manage.py ai_test                          # one real Groq call, no DB/UI needed
-python manage.py ai_test "Explain git rebase" --model llama-3.3-70b-versatile
+python manage.py ai_test "Explain git rebase" --model openai/gpt-oss-120b
 curl http://127.0.0.1:8000/ai/health/             # provider status; no secrets, no API call
 ```
 
@@ -107,6 +107,7 @@ curl http://127.0.0.1:8000/ai/health/             # provider status; no secrets,
 | --- | --- |
 | `ai.W001` warning at startup; chat replies "The AI assistant is not configured yet." (`code: ai_not_configured`) | No `AI_GROQ_API_KEY` in `.env` — see step 1. No Groq request is made in this state. |
 | Chat replies "…rejected the API key" (`code: provider_auth_failed`) | A key **is** set but Groq answered 401/403 — the key is wrong, revoked, or pasted with extra characters. Keys start with `gsk_`. |
+| Chat replies "…rejected this request" (`code: provider_error`) and Groq logs show HTTP 404 | `AI_GROQ_MODEL` is a retired ID (e.g. `llama-3.3-70b-versatile`, shut down 2026-08-16). Set `AI_GROQ_MODEL=openai/gpt-oss-120b` and reload. |
 | Chat replies "…unreachable" (`code: ai_unavailable`) | Network/firewall issue reaching `api.groq.com`, or the circuit breaker is open after repeated failures. |
 | "The AI provider is busy" | Groq rate limit (429); the router retries with backoff. |
 | Widget shows "I could not read your security token" | The page has no CSRF token — reload once. `base.html` publishes it as `<meta name="csrf-token">`. |

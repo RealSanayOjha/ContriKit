@@ -9,7 +9,13 @@ from typing import Any, Optional
 VALID_ROLES = ("system", "user", "assistant", "tool")
 
 GROQ_DEFAULT_BASE_URL = "https://api.groq.com/openai/v1"
-GROQ_DEFAULT_MODEL = "llama-3.3-70b-versatile"
+# Groq retired llama-3.3-70b-versatile on 2026-08-16; gpt-oss-120b is the
+# documented replacement (tool calling still supported).
+GROQ_DEFAULT_MODEL = "openai/gpt-oss-120b"
+GROQ_RETIRED_MODELS = {
+    "llama-3.3-70b-versatile": "openai/gpt-oss-120b",
+    "llama-3.1-8b-instant": "openai/gpt-oss-20b",
+}
 
 
 @dataclass(frozen=True)

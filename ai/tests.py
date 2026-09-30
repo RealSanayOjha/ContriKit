@@ -227,6 +227,13 @@ class GroqProviderTests(SimpleTestCase):
             self.provider.chat(self.request)
 
     @mock.patch("ai.services.providers.groq.requests.post")
+    def test_unknown_model_maps_404(self, mock_post):
+        mock_post.return_value = fake_groq_response({}, status_code=404)
+        with self.assertRaises(LLMProviderError) as ctx:
+            self.provider.chat(self.request)
+        self.assertEqual(ctx.exception.status_code, 404)
+
+    @mock.patch("ai.services.providers.groq.requests.post")
     def test_server_error_maps_5xx(self, mock_post):
         mock_post.return_value = fake_groq_response({}, status_code=500)
         with self.assertRaises(LLMProviderError):
@@ -516,6 +523,16 @@ class SettingsWiringTests(SimpleTestCase):
         self.assertEqual(provider.config.model, "env-test-model")
         self.assertEqual(provider.config.timeout, 30)
         self.assertIn("api.groq.com", provider.config.base_url)
+
+    @override_settings(
+        AI_PROVIDER="groq",
+        AI_PROVIDERS="groq",
+        AI_GROQ_API_KEY="env-test-key",
+        AI_GROQ_MODEL="llama-3.3-70b-versatile",
+    )
+    def test_retired_groq_model_is_remapped(self):
+        service = service_module.get_ai_service()
+        self.assertEqual(service.router.providers[0].config.model, "openai/gpt-oss-120b")
 
 
 class HealthViewTests(SimpleTestCase):

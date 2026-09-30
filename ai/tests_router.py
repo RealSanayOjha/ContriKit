@@ -91,7 +91,7 @@ class ProviderRegistryTests(SimpleTestCase):
     def test_vendor_defaults_are_groq(self):
         defaults = get_provider_defaults("groq")
         self.assertIn("https://api.groq.com", defaults["base_url"])
-        self.assertIn("llama", defaults["model"])
+        self.assertEqual(defaults["model"], "openai/gpt-oss-120b")
         self.assertEqual(get_provider_defaults("anthropic"), {})
         self.assertEqual(get_provider_defaults("openai"), {})
 

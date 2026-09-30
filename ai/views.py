@@ -21,6 +21,8 @@ from .services import (
     AIServiceError,
     LLMAuthenticationError,
     LLMConfigurationError,
+    LLMInvalidResponseError,
+    LLMProviderError,
     LLMProviderServerError,
     LLMProviderUnavailableError,
     LLMRateLimitError,
@@ -160,6 +162,32 @@ def ai_chat_view(request):
                 "code": "provider_rate_limited",
             },
             status=429,
+        )
+    except LLMInvalidResponseError as exc:
+        logger.error("AI provider returned an invalid response: %s", exc)
+        return JsonResponse(
+            {
+                "error": "The AI provider returned an unexpected response. Please try again.",
+                "code": "provider_error",
+            },
+            status=503,
+        )
+    except LLMProviderError as exc:
+        # Client 4xx such as HTTP 404 for a retired Groq model ID.
+        logger.error(
+            "AI provider request failed (HTTP %s): %s",
+            getattr(exc, "status_code", None),
+            exc,
+        )
+        return JsonResponse(
+            {
+                "error": (
+                    "The AI provider rejected this request. Check that "
+                    "AI_GROQ_MODEL is a current Groq model (see .env.example)."
+                ),
+                "code": "provider_error",
+            },
+            status=503,
         )
     except AIServiceError as exc:
         logger.exception("AI chat failed: %s", exc)

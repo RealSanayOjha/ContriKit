@@ -220,11 +220,11 @@ AI_PROVIDER_CIRCUIT_FAILURE_THRESHOLD = config('AI_PROVIDER_CIRCUIT_FAILURE_THRE
 AI_PROVIDER_CIRCUIT_RESET_SECONDS = config('AI_PROVIDER_CIRCUIT_RESET_SECONDS', default=60, cast=int)
 
 # ── Groq ──────────────────────────────────────────────────────────────────
-# Groq hosts open models (Llama, …) at api.groq.com. Keys start with gsk_
-# and the default model is llama-3.3-70b-versatile.
+# Groq hosts open models at api.groq.com. Keys start with gsk_.
+# Default model: openai/gpt-oss-120b (llama-3.3-70b-versatile retired 2026-08-16).
 AI_GROQ_API_KEY = config('AI_GROQ_API_KEY', default='')
 AI_GROQ_BASE_URL = config('AI_GROQ_BASE_URL', default='https://api.groq.com/openai/v1')
-AI_GROQ_MODEL = config('AI_GROQ_MODEL', default='llama-3.3-70b-versatile')
+AI_GROQ_MODEL = config('AI_GROQ_MODEL', default='openai/gpt-oss-120b')
 AI_GROQ_TIMEOUT = config('AI_GROQ_TIMEOUT', default=60, cast=int)
 AI_GROQ_MAX_TOKENS = config('AI_GROQ_MAX_TOKENS', default=1024, cast=int)
 AI_GROQ_TEMPERATURE = config('AI_GROQ_TEMPERATURE', default=0.7, cast=float)
